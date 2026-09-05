@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<meta name="description" content="Lumen is a private browser image editor for preparing responsive website assets.">
+		<meta name="theme-color" content="#1d1e1f">
+		<title>Lumen - Private browser image editor</title>
+		<link rel="stylesheet" href="assets/css/style.css">
+		<script src="assets/js/script.js" defer></script>
+	</head>
+	<body>
+		<a class="skip-link" href="#workspace">Skip to editor</a>
+		<header class="topbar">
+		  <div class="brand"><span class="brand-mark" aria-hidden="true">L</span><span>Lumen</span></div>
+		  <div class="top-actions"><span class="privacy-note">Images stay on this device</span><button class="button secondary" id="openButton" type="button">Open image</button><input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/avif" multiple hidden></div>
+		</header>
+		<main id="workspace" class="app-shell">
+		  <section class="empty-state" id="emptyState">
+		    <div class="empty-art" aria-hidden="true"><span></span></div>
+		    <p class="eyebrow">Private browser image editor</p>
+		    <h1>Prepare images for the web.</h1>
+		    <p class="intro">Crop, resize, adjust and export responsive assets without uploading your images anywhere.</p>
+		    <button class="button primary large" id="emptyOpenButton" type="button">Choose an image</button>
+		    <p class="drop-hint">or drop an image here / paste from the clipboard</p>
+		    <div class="feature-row" aria-label="Key features"><span>Local processing</span><span>Responsive variants</span><span>PNG, JPEG &amp; WebP</span></div>
+		  </section>
+		  <section class="editor" id="editor" hidden>
+		    <aside class="asset-panel" aria-label="Images">
+		      <div class="panel-heading"><h2>Images</h2><button class="icon-button" id="addButton" type="button" aria-label="Add images">+</button></div>
+		      <div class="asset-list" id="assetList"></div>
+		    </aside>
+		    <section class="canvas-area" aria-label="Image preview">
+		      <div class="canvas-toolbar">
+		        <div><button class="icon-button" id="undoButton" type="button" aria-label="Undo" disabled>↶</button><button class="icon-button" id="redoButton" type="button" aria-label="Redo" disabled>↷</button><button class="text-button" id="resetButton" type="button">Reset</button></div>
+		        <div class="zoom-actions"><button class="icon-button" id="zoomOut" type="button" aria-label="Zoom out">−</button><output id="zoomOutput">Fit</output><button class="icon-button" id="zoomIn" type="button" aria-label="Zoom in">+</button></div>
+		      </div>
+		      <div class="canvas-stage" id="canvasStage"><canvas id="previewCanvas"></canvas><div class="drop-overlay" id="dropOverlay">Drop images to add them</div></div>
+		      <div class="image-status"><span id="sourceInfo"></span><span id="editedInfo"></span></div>
+		    </section>
+		    <aside class="controls-panel" aria-label="Editing controls">
+		      <div class="control-tabs" role="tablist"><button class="tab active" data-tab="edit" type="button" role="tab" aria-selected="true">Edit</button><button class="tab" data-tab="export" type="button" role="tab" aria-selected="false">Export</button></div>
+		      <div class="tab-panel" id="editPanel">
+		        <section class="control-section">
+		          <h3>Transform</h3>
+		          <div class="tool-grid"><button class="tool-button" id="rotateLeft" type="button"><span>↶</span>Rotate left</button><button class="tool-button" id="rotateRight" type="button"><span>↷</span>Rotate right</button><button class="tool-button" id="flipHorizontal" type="button"><span>↔</span>Flip H</button><button class="tool-button" id="flipVertical" type="button"><span>↕</span>Flip V</button></div>
+		        </section>
+		        <section class="control-section">
+		          <div class="section-heading"><h3>Crop</h3><button class="text-button" id="resetCrop" type="button">Full image</button></div>
+		          <label>Aspect ratio<select id="aspectRatio"><option value="free">Free</option><option value="1">Square · 1:1</option><option value="1.7777778">Landscape · 16:9</option><option value="1.5">Photo · 3:2</option><option value="0.8">Portrait · 4:5</option></select></label>
+		          <div class="field-row"><label>X<input id="cropX" type="number" min="0"></label><label>Y<input id="cropY" type="number" min="0"></label></div>
+		          <div class="field-row"><label>Width<input id="cropWidth" type="number" min="1"></label><label>Height<input id="cropHeight" type="number" min="1"></label></div>
+		          <button class="button secondary full" id="applyAspect" type="button">Apply ratio from centre</button>
+		        </section>
+		        <section class="control-section">
+		          <div class="section-heading"><h3>Adjust</h3><button class="text-button" id="resetAdjustments" type="button">Reset</button></div>
+		          <label class="range-label"><span>Brightness <output id="brightnessValue">0</output></span><input id="brightness" type="range" min="-100" max="100" value="0"></label>
+		          <label class="range-label"><span>Contrast <output id="contrastValue">0</output></span><input id="contrast" type="range" min="-100" max="100" value="0"></label>
+		          <label class="range-label"><span>Saturation <output id="saturationValue">0</output></span><input id="saturation" type="range" min="-100" max="100" value="0"></label>
+		          <label class="range-label"><span>Warmth <output id="warmthValue">0</output></span><input id="warmth" type="range" min="-100" max="100" value="0"></label>
+		          <label class="range-label"><span>Blur <output id="blurValue">0</output></span><input id="blur" type="range" min="0" max="20" value="0"></label>
+		        </section>
+		      </div>
+		      <div class="tab-panel" id="exportPanel" hidden>
+		        <section class="control-section export-section">
+		          <h3>Output</h3>
+		          <label>File name<input id="exportName" type="text" value="image"></label>
+		          <div class="field-row"><label>Width<input id="exportWidth" type="number" min="1"></label><label>Height<input id="exportHeight" type="number" min="1"></label></div>
+		          <label class="check-label"><input id="lockRatio" type="checkbox" checked> Lock aspect ratio</label>
+		          <label>Format<select id="exportFormat"><option value="image/webp">WebP</option><option value="image/jpeg">JPEG</option><option value="image/png">PNG</option></select></label>
+		          <label class="range-label" id="qualityLabel"><span>Quality <output id="qualityValue">82</output>%</span><input id="quality" type="range" min="1" max="100" value="82"></label>
+		          <div class="export-summary"><span>Estimated size</span><strong id="estimatedSize">Calculate on export</strong></div>
+		          <button class="button primary full" id="exportButton" type="button">Export image</button>
+		        </section>
+		        <section class="control-section">
+		          <h3>Responsive set</h3><p class="section-copy">Generate common widths without enlarging the source.</p>
+		          <div class="check-grid"><label><input type="checkbox" name="variant" value="320" checked> 320w</label><label><input type="checkbox" name="variant" value="640" checked> 640w</label><label><input type="checkbox" name="variant" value="960" checked> 960w</label><label><input type="checkbox" name="variant" value="1280" checked> 1280w</label><label><input type="checkbox" name="variant" value="1600"> 1600w</label><label><input type="checkbox" name="variant" value="1920"> 1920w</label></div>
+		          <button class="button secondary full" id="variantsButton" type="button">Download variants</button>
+		          <label class="markup-label">Generated markup<textarea id="markupOutput" rows="4" readonly></textarea></label><button class="text-button copy-button" id="copyMarkup" type="button">Copy markup</button>
+		        </section>
+		      </div>
+		    </aside>
+		  </section>
+		</main>
+		<div class="toast" id="toast" role="status" aria-live="polite"></div>
+	</body>
+</html>
