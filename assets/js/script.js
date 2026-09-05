@@ -26,10 +26,17 @@
     const images = [...files].filter(file => file.type.startsWith("image/"));
     if (!images.length) return showToast("Choose a supported image file");
     for (const file of images) {
+      const url = URL.createObjectURL(file);
       try {
-        const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-        state.assets.push({ file, image: bitmap, url: URL.createObjectURL(file), edit: defaultEdit(bitmap) });
-      } catch { showToast("Could not open " + file.name); }
+        const image = new Image();
+        image.src = url;
+        await image.decode();
+        if (!image.naturalWidth || !image.naturalHeight) throw new Error("Image has no dimensions");
+        state.assets.push({ file, image, url, edit: defaultEdit(image) });
+      } catch {
+        URL.revokeObjectURL(url);
+        showToast("Could not open " + file.name);
+      }
     }
     if (state.active < 0 && state.assets.length) {
       $("emptyState").hidden = true; $("editor").hidden = false; selectAsset(0);
