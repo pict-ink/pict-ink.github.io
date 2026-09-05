@@ -1,10 +1,19 @@
-const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm";
+const TRANSFORMERS_URLS = [
+	"https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.mjs",
+	"https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm",
+	"https://unpkg.com/@huggingface/transformers@3.8.1/dist/transformers.min.mjs"
+];
 const models = new Map();
 let library;
 
-async function transformers() {
+async function transformers(report = () => {}) {
 	if (!library) {
-		library = await import(TRANSFORMERS_URL);
+		let lastError;
+		for (const url of TRANSFORMERS_URLS) {
+			try { report({phase: "Loading AI engine", value: 1, detail: new URL(url).hostname}); library = await import(url); break; }
+			catch (error) { lastError = error; }
+		}
+		if (!library) throw new Error("AI engine download failed: " + (lastError?.message || "network request blocked"));
 		library.env.allowLocalModels = false;
 		library.env.useBrowserCache = true;
 	}
@@ -21,8 +30,12 @@ function progressReporter(report) {
 
 async function getPipeline(key, task, model, report) {
 	if (!models.has(key)) {
-		const {pipeline} = await transformers();
-		models.set(key, pipeline(task, model, {dtype: "q8", progress_callback: progressReporter(report)}).catch(error => { models.delete(key); throw error; }));
+		const {pipeline} = await transformers(report), progress_callback = progressReporter(report);
+		models.set(key, pipeline(task, model, {dtype: "q8", progress_callback}).catch(async firstError => {
+			report({phase: "Trying compatible model", value: 1, detail: "The compact weights are unavailable; trying the standard model"});
+			try { return await pipeline(task, model, {dtype: "fp32", progress_callback}); }
+			catch (secondError) { models.delete(key); throw new Error(`${model}: ${secondError.message || firstError.message || "model load failed"}`); }
+		}));
 	}
 	return models.get(key);
 }
