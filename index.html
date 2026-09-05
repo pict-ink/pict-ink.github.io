@@ -43,6 +43,7 @@
 			<symbol id="i-paste" viewBox="0 0 24 24"><path d="M9 5H6v16h13V5h-3"/><rect x="9" y="3" width="7" height="4" rx="1"/></symbol>
 		</svg>
 		<input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/avif" multiple hidden>
+		<input id="projectInput" type="file" accept=".pict,application/json" hidden>
 		<main id="workspace" class="app-shell">
 			<section class="empty-state" id="emptyState">
 				<div class="empty-art" aria-hidden="true"><span></span></div>
@@ -85,7 +86,7 @@
 					<div class="canvas-toolbar">
 						<div><button class="icon-button" id="undoButton" type="button" aria-label="Undo" disabled>↶</button><button class="icon-button" id="redoButton" type="button" aria-label="Redo" disabled>↷</button><button class="text-button" id="resetButton" type="button">Reset</button></div>
 						<span class="active-tool-status" id="activeToolStatus">Rectangle select</span>
-						<div class="zoom-actions"><button class="icon-button" id="zoomOut" type="button" aria-label="Zoom out">−</button><output id="zoomOutput">Fit</output><button class="icon-button" id="zoomIn" type="button" aria-label="Zoom in">+</button></div>
+						<div class="zoom-actions"><button class="icon-button grid-toggle" id="gridToggle" type="button" aria-label="Toggle pixel grid" title="Toggle pixel grid">#</button><button class="icon-button" id="zoomOut" type="button" aria-label="Zoom out">−</button><output id="zoomOutput">Fit</output><button class="icon-button" id="zoomIn" type="button" aria-label="Zoom in">+</button></div>
 					</div>
 					<div class="canvas-stage" id="canvasStage"><div class="canvas-wrap" id="canvasWrap"><canvas id="previewCanvas"></canvas><canvas id="interactionCanvas"></canvas></div><div class="drop-overlay" id="dropOverlay">Drop images to add them</div></div>
 					<div class="image-status"><span id="sourceInfo"></span><span id="editedInfo"></span></div>
@@ -97,11 +98,15 @@
 						<section class="control-section tool-options">
 							<div class="section-heading"><h3 id="activeToolName">Rectangle select</h3><button class="text-button" id="clearSelection" type="button">Clear selection</button></div>
 							<p class="tool-hint" id="toolHint">Drag to select a rectangular area.</p>
+							<label id="selectionModeLabel">Selection mode<select id="selectionMode"><option value="replace">Replace</option><option value="add">Add</option><option value="subtract">Subtract</option><option value="intersect">Intersect</option></select></label>
 							<label>Size<input id="toolSize" type="number" min="1" max="200" value="18"></label>
 							<label class="range-label"><span>Tool opacity <output id="toolOpacityValue">100</output>%</span><input id="toolOpacity" type="range" min="1" max="100" value="100"></label>
+							<label class="range-label"><span>Brush hardness <output id="brushHardnessValue">80</output>%</span><input id="brushHardness" type="range" min="0" max="100" value="80"></label>
+							<label class="range-label"><span>Brush spacing <output id="brushSpacingValue">20</output>%</span><input id="brushSpacing" type="range" min="1" max="100" value="20"></label>
 							<label class="check-label"><input id="shapeFill" type="checkbox"> Fill shapes</label>
 							<label class="range-label"><span>Fill tolerance <output id="toleranceValue">24</output></span><input id="fillTolerance" type="range" min="0" max="100" value="24"></label>
-							<div class="selection-actions"><button class="button secondary" id="cropToSelection" type="button">Crop selection</button><button class="button secondary" id="deleteSelection" type="button">Delete selection</button></div>
+							<label class="range-label"><span>Feather <output id="featherValue">0</output> px</span><input id="selectionFeather" type="range" min="0" max="50" value="0"></label>
+							<div class="selection-actions"><button class="button secondary" id="invertSelection" type="button">Invert</button><button class="button secondary" id="floatSelection" type="button">Move pixels</button><button class="button secondary" id="resizeSelection" type="button">Resize pixels</button><button class="button secondary" id="cropToSelection" type="button">Crop selection</button><button class="button secondary" id="deleteSelection" type="button">Delete selection</button></div>
 						</section>
 						<section class="control-section image-control-section" id="transformSection">
 							<h3>Transform</h3>
@@ -130,6 +135,9 @@
 							<div class="layers-list" id="layersList"></div>
 							<div class="layer-actions"><button class="button secondary" id="duplicateLayer" type="button">Duplicate</button><button class="button secondary" id="deleteLayer" type="button">Delete</button><button class="button secondary" id="layerUp" type="button">Move up</button><button class="button secondary" id="layerDown" type="button">Move down</button><button class="button secondary layer-action-wide" id="mergeLayer" type="button">Merge down</button></div>
 							<label class="range-label"><span>Opacity <output id="layerOpacityValue">100</output>%</span><input id="layerOpacity" type="range" min="0" max="100" value="100"></label>
+							<label>Blend mode<select id="layerBlend"><option value="source-over">Normal</option><option value="multiply">Multiply</option><option value="screen">Screen</option><option value="overlay">Overlay</option><option value="darken">Darken</option><option value="lighten">Lighten</option><option value="color">Colour</option><option value="luminosity">Luminosity</option></select></label>
+						</section>
+						<section class="control-section history-section"><div class="section-heading"><h3>History</h3><button class="text-button" id="clearHistory" type="button">Clear</button></div><ol class="history-list" id="historyList"></ol>
 						</section>
 					</div>
 					<div class="tab-panel" id="exportPanel" hidden>
@@ -149,9 +157,9 @@
 				</aside>
 			</section>
 		</main>
-		<menu class="app-menu" id="fileMenu"><button data-action="open" type="button">Open image <span>Ctrl+O</span></button><button data-action="export" type="button">Export <span>Ctrl+E</span></button></menu>
-		<menu class="app-menu" id="editMenu"><button data-action="undo" type="button">Undo <span>Ctrl+Z</span></button><button data-action="redo" type="button">Redo <span>Ctrl+Y</span></button><hr><button data-action="copy" type="button">Copy <span>Ctrl+C</span></button><button data-action="cut" type="button">Cut <span>Ctrl+X</span></button><button data-action="paste" type="button">Paste <span>Ctrl+V</span></button></menu>
-		<menu class="app-menu" id="imageMenu"><button data-action="transform" type="button">Transform</button><button data-action="crop" type="button">Crop</button><button data-action="adjust" type="button">Adjustments</button></menu>
+		<menu class="app-menu" id="fileMenu"><button data-action="open" type="button">Open image <span>Ctrl+O</span></button><button data-action="open-project" type="button">Open Pict project</button><button data-action="save-project" type="button">Save Pict project <span>Ctrl+Shift+S</span></button><hr><button data-action="recover" type="button">Recover last draft</button><button data-action="export" type="button">Export <span>Ctrl+E</span></button></menu>
+		<menu class="app-menu" id="editMenu"><button data-action="undo" type="button">Undo <span>Ctrl+Z</span></button><button data-action="redo" type="button">Redo <span>Ctrl+Y</span></button><hr><button data-action="select-all" type="button">Select all <span>Ctrl+A</span></button><button data-action="deselect" type="button">Deselect <span>Ctrl+Shift+A</span></button><hr><button data-action="copy" type="button">Copy <span>Ctrl+C</span></button><button data-action="cut" type="button">Cut <span>Ctrl+X</span></button><button data-action="paste" type="button">Paste <span>Ctrl+V</span></button></menu>
+		<menu class="app-menu" id="imageMenu"><button data-action="transform" type="button">Transform</button><button data-action="crop" type="button">Crop</button><button data-action="adjust" type="button">Adjustments</button><hr><button data-action="canvas-size" type="button">Canvas size</button><button data-action="effects" type="button">Effects</button></menu>
 		<dialog class="modal" id="imageDialog"><div class="modal-heading"><h2 id="imageDialogTitle">Image</h2><button class="modal-close" data-close="imageDialog" type="button" aria-label="Close">×</button></div><div class="modal-body" id="imageDialogBody"></div></dialog>
 		<dialog class="modal colour-dialog" id="colourDialog">
 			<div class="modal-heading"><h2>Choose colour</h2><button class="modal-close" data-close="colourDialog" type="button" aria-label="Close">×</button></div>
@@ -173,6 +181,9 @@
 				<div class="dialog-actions"><button class="button secondary" data-close="textDialog" type="button">Cancel</button><button class="button primary" id="applyText" type="button">Add text</button></div>
 			</div>
 		</dialog>
+		<dialog class="modal" id="canvasDialog"><div class="modal-heading"><h2>Canvas size</h2><button class="modal-close" data-close="canvasDialog" type="button" aria-label="Close">×</button></div><div class="modal-body"><div class="field-row"><label>Width<input id="canvasWidth" type="number" min="1" max="16384"></label><label>Height<input id="canvasHeight" type="number" min="1" max="16384"></label></div><label>Anchor<select id="canvasAnchor"><option value="centre">Centre</option><option value="top-left">Top left</option></select></label><div class="dialog-actions"><button class="button secondary" data-close="canvasDialog" type="button">Cancel</button><button class="button primary" id="applyCanvasSize" type="button">Resize canvas</button></div></div></dialog>
+		<dialog class="modal" id="selectionDialog"><div class="modal-heading"><h2>Resize selected pixels</h2><button class="modal-close" data-close="selectionDialog" type="button" aria-label="Close">×</button></div><div class="modal-body"><div class="field-row"><label>Width<input id="selectionWidth" type="number" min="1" max="16384"></label><label>Height<input id="selectionHeight" type="number" min="1" max="16384"></label></div><div class="dialog-actions"><button class="button secondary" data-close="selectionDialog" type="button">Cancel</button><button class="button primary" id="applySelectionSize" type="button">Resize and move</button></div></div></dialog>
+		<dialog class="modal" id="effectsDialog"><div class="modal-heading"><h2>Effects</h2><button class="modal-close" data-close="effectsDialog" type="button" aria-label="Close">×</button></div><div class="modal-body"><p class="section-copy">Effects apply to the active layer and can be undone.</p><div class="effect-grid"><button class="button secondary" data-effect="grayscale" type="button">Grayscale</button><button class="button secondary" data-effect="sepia" type="button">Sepia</button><button class="button secondary" data-effect="noise" type="button">Noise</button><button class="button secondary" data-effect="pixelate" type="button">Pixelate</button><button class="button secondary" data-effect="distort" type="button">Wave distortion</button></div><fieldset class="levels-fields"><legend>Levels</legend><div class="field-row"><label>Black<input id="levelBlack" type="number" min="0" max="254" value="0"></label><label>White<input id="levelWhite" type="number" min="1" max="255" value="255"></label></div><label>Gamma<input id="levelGamma" type="number" min="0.1" max="5" step="0.1" value="1"></label><button class="button secondary full spaced-button" data-effect="levels" type="button">Apply levels</button></fieldset></div></dialog>
 		<menu class="context-menu" id="contextMenu"><button data-command="copy" type="button">Copy <span>Ctrl+C</span></button><button data-command="cut" type="button">Cut <span>Ctrl+X</span></button><button data-command="paste" type="button">Paste <span>Ctrl+V</span></button><hr><button data-command="delete" type="button">Delete selection <span>Delete</span></button><button data-command="clear" type="button">Clear selection <span>Esc</span></button></menu>
 		<div class="toast" id="toast" role="status" aria-live="polite"></div>
 	</body>

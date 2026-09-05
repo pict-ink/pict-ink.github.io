@@ -6,12 +6,13 @@
 	const adjustmentIds = ["brightness", "contrast", "saturation", "warmth", "blur"];
 	const extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"};
 	const colours = ["#f3a6b8", "#ffb38a", "#f6d77d", "#b9e18f", "#80d7bd", "#83cbea", "#aaa7ed", "#d6a0df", "#a92f53", "#b94d22", "#a17a08", "#39752d", "#087363", "#176386", "#50439a", "#792f85"];
-	const state = {assets: [], active: -1, zoom: 0, history: [], future: [], tool: "select", gesture: null, clipboard: null, colour: colours[0], restoring: false, textPoint: null, hue: 345, nudge: null, cloneSource: null};
+	const state = {assets: [], active: -1, zoom: 0, history: [], future: [], tool: "select", gesture: null, clipboard: null, colour: colours[0], restoring: false, textPoint: null, hue: 345, nudge: null, cloneSource: null, grid: false, draftTimer: null};
 	let toastTimer;
 
 	const makeCanvas = (width, height) => { const result = document.createElement("canvas"); result.width = width; result.height = height; return result; };
 	const activeAsset = () => state.assets[state.active];
 	const activeLayer = () => { const asset = activeAsset(); return asset?.layers[asset.activeLayer]; };
+	const canAllocateLayer = (asset = activeAsset()) => { const allowed = asset && asset.width * asset.height * (asset.layers.length + 1) <= 96000000; if (!allowed) showToast("Flatten or resize this large document before adding another layer"); return allowed; };
 	const defaultEdit = image => ({rotation: 0, flipX: false, flipY: false, crop: {x: 0, y: 0, width: image.naturalWidth || image.width, height: image.naturalHeight || image.height}, brightness: 0, contrast: 0, saturation: 0, warmth: 0, blur: 0});
 	const cleanName = name => name.replace(/\.[^.]+$/, "").replace(/[^a-z0-9_-]+/gi, "-").replace(/^-|-$/g, "") || "image";
 	const formatBytes = bytes => bytes < 1024 ? bytes + " B" : bytes < 1048576 ? (bytes / 1024).toFixed(1) + " KB" : (bytes / 1048576).toFixed(1) + " MB";
@@ -20,11 +21,14 @@
 	function snapshot() {
 		const asset = activeAsset();
 		if (!asset || state.restoring) return null;
+		if (asset.width * asset.height * asset.layers.length > 60000000) return null;
 		return {
+			width: asset.width,
+			height: asset.height,
 			edit: JSON.stringify(asset.edit),
 			selection: JSON.stringify(asset.selection),
 			activeLayer: asset.activeLayer,
-			layers: asset.layers.map(layer => ({name: layer.name, visible: layer.visible, opacity: layer.opacity, floating: Boolean(layer.floating), targetLayer: layer.targetLayer, offsetX: layer.offsetX || 0, offsetY: layer.offsetY || 0, data: layer.canvas.toDataURL("image/png")}))
+			layers: asset.layers.map(layer => ({name: layer.name, visible: layer.visible, opacity: layer.opacity, blend: layer.blend || "source-over", floating: Boolean(layer.floating), targetLayer: layer.targetLayer, offsetX: layer.offsetX || 0, offsetY: layer.offsetY || 0, data: layer.canvas.toDataURL("image/png")}))
 		};
 	}
 	async function canvasFromURL(url, width, height) {
@@ -32,15 +36,16 @@
 	}
 	async function restoreSnapshot(saved) {
 		const asset = activeAsset(); state.restoring = true;
-		asset.edit = JSON.parse(saved.edit); asset.selection = JSON.parse(saved.selection); asset.activeLayer = saved.activeLayer;
+		asset.width = saved.width || asset.width; asset.height = saved.height || asset.height; asset.edit = JSON.parse(saved.edit); asset.selection = JSON.parse(saved.selection); asset.activeLayer = saved.activeLayer;
 		asset.layers = await Promise.all(saved.layers.map(async layer => ({...layer, canvas: await canvasFromURL(layer.data, asset.width, asset.height)})));
 		state.restoring = false;
 	}
-	function pushHistory(before) {
-		if (!before) return;
-		state.history.push(before); if (state.history.length > 25) state.history.shift(); state.future = []; updateHistoryButtons();
+	function renderHistory() { $("historyList").replaceChildren(...state.history.map((entry, index) => { const item = document.createElement("li"), button = document.createElement("button"); button.type = "button"; button.textContent = `${index + 1}. ${entry.label || "Edit"}`; button.title = "Return to before this edit"; button.addEventListener("click", async () => { while (state.history.length > index) await undo(); }); item.append(button); return item; })); }
+	function pushHistory(before, label = "Edit") {
+		if (!before) { scheduleDraftSave(); return; }
+		before.label = label; state.history.push(before); const asset = activeAsset(), pixels = asset ? asset.width * asset.height * asset.layers.length : 0, limit = pixels > 40000000 ? 3 : pixels > 16000000 ? 8 : 25; while (state.history.length > limit) state.history.shift(); state.future = []; updateHistoryButtons(); renderHistory(); scheduleDraftSave();
 	}
-	function updateHistoryButtons() { $("undoButton").disabled = !state.history.length || state.restoring; $("redoButton").disabled = !state.future.length || state.restoring; }
+	function updateHistoryButtons() { $("undoButton").disabled = !state.history.length || state.restoring; $("redoButton").disabled = !state.future.length || state.restoring; renderHistory(); }
 	function updateActionAvailability() {
 		const selected = Boolean(activeAsset()?.selection), pasteable = Boolean(state.clipboard);
 		document.querySelectorAll('[data-command="copy"],[data-command="cut"]').forEach(button => button.hidden = !selected);
@@ -51,11 +56,11 @@
 	}
 	async function undo() {
 		if (!state.history.length || state.restoring) return;
-		const current = snapshot(), saved = state.history.pop(); state.future.push(current); await restoreSnapshot(saved); syncControls(); render(); updateHistoryButtons();
+		const current = snapshot(), saved = state.history.pop(); if (current) state.future.push(current); await restoreSnapshot(saved); syncControls(); render(); updateHistoryButtons(); scheduleDraftSave();
 	}
 	async function redo() {
 		if (!state.future.length || state.restoring) return;
-		const current = snapshot(), saved = state.future.pop(); state.history.push(current); await restoreSnapshot(saved); syncControls(); render(); updateHistoryButtons();
+		const current = snapshot(), saved = state.future.pop(); if (current) state.history.push(current); await restoreSnapshot(saved); syncControls(); render(); updateHistoryButtons(); scheduleDraftSave();
 	}
 
 	async function decodeFile(file) {
@@ -68,9 +73,9 @@
 		if (!images.length) return showToast("Choose a supported image file");
 		for (const file of images) {
 			try {
-				const {url, image} = await decodeFile(file), base = makeCanvas(image.naturalWidth, image.naturalHeight);
+				const {url, image} = await decodeFile(file); if (image.naturalWidth * image.naturalHeight > 40000000) { URL.revokeObjectURL(url); showToast(file.name + " is larger than Pict's 40 MP safety limit"); continue; } const base = makeCanvas(image.naturalWidth, image.naturalHeight);
 				base.getContext("2d").drawImage(image, 0, 0);
-				state.assets.push({file, image, url, width: image.naturalWidth, height: image.naturalHeight, edit: defaultEdit(image), selection: null, activeLayer: 0, layers: [{name: "Background", canvas: base, visible: true, opacity: 1}]});
+				state.assets.push({file, image, url, width: image.naturalWidth, height: image.naturalHeight, edit: defaultEdit(image), selection: null, activeLayer: 0, layers: [{name: "Background", canvas: base, visible: true, opacity: 1, blend: "source-over"}]});
 			} catch { showToast("Could not open " + file.name); }
 		}
 		if (state.active < 0 && state.assets.length) { $("emptyState").hidden = true; $("editor").hidden = false; selectAsset(0); }
@@ -94,16 +99,16 @@
 		["cropX", "cropY", "cropWidth", "cropHeight"].forEach((id, i) => $(id).value = Math.round([edit.crop.x, edit.crop.y, edit.crop.width, edit.crop.height][i]));
 		adjustmentIds.forEach(id => { $(id).value = edit[id]; $(id + "Value").value = edit[id]; });
 		$("exportName").value = cleanName(asset.file.name); $("exportWidth").value = Math.round(edit.crop.width); $("exportHeight").value = Math.round(edit.crop.height);
-		renderLayers(); updateMarkup();
+		renderLayers(); $("layerBlend").value = activeLayer()?.blend || "source-over"; updateMarkup();
 	}
 
-	const filterString = edit => `brightness(${100 + edit.brightness}%) contrast(${100 + edit.contrast}%) saturate(${100 + edit.saturation}%) blur(${edit.blur}px)`;
+	const filterString = (edit, scale = 1) => `brightness(${100 + edit.brightness}%) contrast(${100 + edit.contrast}%) saturate(${100 + edit.saturation}%) blur(${edit.blur * scale}px)`;
 	function drawLayers(target, width, height) {
 		const asset = activeAsset(), edit = asset.edit, crop = edit.crop, context = target.getContext("2d");
-		target.width = width; target.height = height; context.clearRect(0, 0, width, height); context.save(); context.filter = filterString(edit);
+		target.width = width; target.height = height; context.clearRect(0, 0, width, height); context.save(); context.filter = filterString(edit, width / (Math.abs(edit.rotation % 180) === 90 ? crop.height : crop.width));
 		context.translate(width / 2, height / 2); context.scale(edit.flipX ? -1 : 1, edit.flipY ? -1 : 1); context.rotate(edit.rotation * Math.PI / 180);
 		const quarter = Math.abs(edit.rotation % 180) === 90, drawWidth = quarter ? height : width, drawHeight = quarter ? width : height;
-		for (const layer of asset.layers) if (layer.visible) { context.globalAlpha = layer.opacity; context.drawImage(layer.canvas, crop.x - (layer.offsetX || 0), crop.y - (layer.offsetY || 0), crop.width, crop.height, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight); }
+		for (const layer of asset.layers) if (layer.visible) { context.globalAlpha = layer.opacity; context.globalCompositeOperation = layer.blend || "source-over"; context.drawImage(layer.canvas, crop.x - (layer.offsetX || 0), crop.y - (layer.offsetY || 0), crop.width, crop.height, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight); }
 		context.restore();
 		if (edit.warmth) { context.save(); context.globalCompositeOperation = "source-atop"; context.globalAlpha = Math.abs(edit.warmth) / 500; context.fillStyle = edit.warmth > 0 ? "#ff9a45" : "#5588ff"; context.fillRect(0, 0, width, height); context.restore(); }
 	}
@@ -136,6 +141,7 @@
 	}
 	function drawSelection(transient) {
 		const context = interactionCanvas.getContext("2d"); context.clearRect(0, 0, interactionCanvas.width, interactionCanvas.height);
+		if (state.grid && activeAsset()) { const crop = activeAsset().edit.crop, stepX = interactionCanvas.width / crop.width, stepY = interactionCanvas.height / crop.height; if (Math.min(stepX, stepY) >= 6) { context.save(); context.beginPath(); for (let x = 0; x <= interactionCanvas.width; x += stepX) { context.moveTo(x, 0); context.lineTo(x, interactionCanvas.height); } for (let y = 0; y <= interactionCanvas.height; y += stepY) { context.moveTo(0, y); context.lineTo(interactionCanvas.width, y); } context.strokeStyle = "#ffffff1f"; context.lineWidth = 1; context.stroke(); context.restore(); } }
 		const selection = transient || activeAsset()?.selection; if (!selection) return;
 		if (selection.type === "magic") { const bounds = selectionBounds(selection), a = sourceToCanvas({x: bounds.x, y: bounds.y}), b = sourceToCanvas({x: bounds.x + bounds.width, y: bounds.y + bounds.height}); context.save(); context.fillStyle = "#d5b87122"; selection.spans.forEach(span => { const p = sourceToCanvas({x: span.x, y: span.y}), q = sourceToCanvas({x: span.x + span.width, y: span.y + 1}); context.fillRect(p.x, p.y, q.x - p.x, q.y - p.y); }); context.setLineDash([5, 4]); context.strokeStyle = "#fff"; context.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y); context.restore(); return; }
 		if (selection.points.length < 2) return;
@@ -158,6 +164,18 @@
 		const xs = selection.points.map(point => point.x), ys = selection.points.map(point => point.y), x = Math.max(0, Math.min(...xs)), y = Math.max(0, Math.min(...ys));
 		return {x, y, width: Math.max(1, Math.min(activeAsset().width, Math.max(...xs)) - x), height: Math.max(1, Math.min(activeAsset().height, Math.max(...ys)) - y)};
 	}
+	function selectionMask(selection = activeAsset().selection, feather = +$("selectionFeather").value) {
+		const asset = activeAsset(), base = makeCanvas(asset.width, asset.height), context = base.getContext("2d"); context.fillStyle = "#fff"; if (selectionPath(context, selection)) context.fill(); if (!feather) return base;
+		const softened = makeCanvas(asset.width, asset.height), soft = softened.getContext("2d"); soft.filter = `blur(${Math.min(50, feather)}px)`; soft.drawImage(base, 0, 0); return softened;
+	}
+	function maskToSelection(mask) {
+		const {width, height} = mask, alpha = mask.getContext("2d").getImageData(0, 0, width, height).data, spans = []; for (let y = 0; y < height; y++) for (let x = 0; x < width;) { while (x < width && alpha[(y * width + x) * 4 + 3] < 128) x++; const from = x; while (x < width && alpha[(y * width + x) * 4 + 3] >= 128) x++; if (x > from) spans.push({x: from, y, width: x - from}); } return spans.length ? {type: "magic", spans} : null;
+	}
+	function combineSelection(next) {
+		const asset = activeAsset(), current = asset.selection, mode = $("selectionMode").value; if (!current || mode === "replace") { asset.selection = next; return; }
+		const currentMask = selectionMask(current, 0), nextMask = selectionMask(next, 0), context = currentMask.getContext("2d"); if (mode === "add") context.globalCompositeOperation = "source-over"; if (mode === "subtract") context.globalCompositeOperation = "destination-out"; if (mode === "intersect") context.globalCompositeOperation = "destination-in"; context.drawImage(nextMask, 0, 0); asset.selection = maskToSelection(currentMask);
+	}
+	function invertSelection() { const asset = activeAsset(); if (!asset) return; const before = snapshot(), mask = selectionMask(asset.selection, 0), context = mask.getContext("2d"); context.globalCompositeOperation = "xor"; context.fillStyle = "#fff"; context.fillRect(0, 0, asset.width, asset.height); asset.selection = maskToSelection(mask); pushHistory(before, "Invert selection"); render(); }
 
 	function parseColour(value) {
 		const test = makeCanvas(1, 1).getContext("2d"); test.fillStyle = "#010203"; test.fillStyle = value.trim();
@@ -190,7 +208,7 @@
 
 	function compositeSource() {
 		const asset = activeAsset(), result = makeCanvas(asset.width, asset.height), context = result.getContext("2d");
-		for (const layer of asset.layers) if (layer.visible) { context.globalAlpha = layer.opacity; context.drawImage(layer.canvas, layer.offsetX || 0, layer.offsetY || 0); } context.globalAlpha = 1; return result;
+		for (const layer of asset.layers) if (layer.visible) { context.globalAlpha = layer.opacity; context.globalCompositeOperation = layer.blend || "source-over"; context.drawImage(layer.canvas, layer.offsetX || 0, layer.offsetY || 0); } context.globalAlpha = 1; context.globalCompositeOperation = "source-over"; return result;
 	}
 	function contiguousSpans(point) {
 		const asset = activeAsset(), width = asset.width, height = asset.height, x = Math.floor(point.x), y = Math.floor(point.y); if (x < 0 || y < 0 || x >= width || y >= height || width * height > 40000000) return null;
@@ -199,13 +217,13 @@
 		while (stack.length) { const index = stack.pop(); if (index < 0 || index >= width * height || seen[index] || !matches(index)) continue; seen[index] = 1; selected[index] = 1; const px = index % width, py = (index / width) | 0; if (px) stack.push(index - 1); if (px + 1 < width) stack.push(index + 1); if (py) stack.push(index - width); if (py + 1 < height) stack.push(index + width); }
 		const spans = []; for (let py = 0; py < height; py++) for (let px = 0; px < width;) { while (px < width && !selected[py * width + px]) px++; const from = px; while (px < width && selected[py * width + px]) px++; if (px > from) spans.push({x: from, y: py, width: px - from}); } return spans;
 	}
-	function magicSelect(point) { const spans = contiguousSpans(point); if (!spans?.length) return showToast("No matching area found"); activeAsset().selection = {type: "magic", spans}; drawSelection(); updateActionAvailability(); showToast("Similar contiguous pixels selected"); }
-	function recolourLine(from, to) { const context = activeLayer().canvas.getContext("2d"), size = Math.max(1, +$("toolSize").value); context.save(); clipSelection(context); context.globalCompositeOperation = "color"; context.globalAlpha = +$("toolOpacity").value / 100; context.strokeStyle = state.colour; context.lineWidth = size; context.lineCap = "round"; context.lineJoin = "round"; context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke(); context.restore(); }
-	function cloneLine(from, to, gesture) { const context = activeLayer().canvas.getContext("2d"), size = Math.max(1, +$("toolSize").value), distance = Math.hypot(to.x - from.x, to.y - from.y), steps = Math.max(1, Math.ceil(distance / Math.max(1, size / 4))); context.save(); clipSelection(context); context.globalAlpha = +$("toolOpacity").value / 100; for (let i = 0; i <= steps; i++) { const t = i / steps, x = from.x + (to.x - from.x) * t, y = from.y + (to.y - from.y) * t, sx = x + gesture.cloneOffset.x, sy = y + gesture.cloneOffset.y; context.save(); context.beginPath(); context.arc(x, y, size / 2, 0, Math.PI * 2); context.clip(); context.drawImage(gesture.cloneSource, sx - size / 2, sy - size / 2, size, size, x - size / 2, y - size / 2, size, size); context.restore(); } context.restore(); }
+	function magicSelect(point) { const spans = contiguousSpans(point); if (!spans?.length) return showToast("No matching area found"); combineSelection({type: "magic", spans}); drawSelection(); updateActionAvailability(); showToast("Similar contiguous pixels selected"); }
+	function recolourLine(from, to) { const layer = activeLayer(), context = layer.canvas.getContext("2d"), size = Math.max(1, +$("toolSize").value); context.save(); context.translate(-(layer.offsetX || 0), -(layer.offsetY || 0)); clipSelection(context); context.globalCompositeOperation = "color"; context.globalAlpha = +$("toolOpacity").value / 100; context.strokeStyle = state.colour; context.lineWidth = size; context.lineCap = "round"; context.lineJoin = "round"; context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke(); context.restore(); }
+	function cloneLine(from, to, gesture) { const layer = activeLayer(), context = layer.canvas.getContext("2d"), size = Math.max(1, +$("toolSize").value), distance = Math.hypot(to.x - from.x, to.y - from.y), steps = Math.max(1, Math.ceil(distance / Math.max(1, size * +$("brushSpacing").value / 100))); context.save(); context.translate(-(layer.offsetX || 0), -(layer.offsetY || 0)); clipSelection(context); context.globalAlpha = +$("toolOpacity").value / 100; for (let i = 0; i <= steps; i++) { const t = i / steps, x = from.x + (to.x - from.x) * t, y = from.y + (to.y - from.y) * t, sx = x + gesture.cloneOffset.x, sy = y + gesture.cloneOffset.y; context.save(); context.beginPath(); context.arc(x, y, size / 2, 0, Math.PI * 2); context.clip(); context.drawImage(gesture.cloneSource, sx - size / 2, sy - size / 2, size, size, x - size / 2, y - size / 2, size, size); context.restore(); } context.restore(); }
 	function paintLine(from, to) {
-		const context = activeLayer().canvas.getContext("2d"), size = Math.max(1, +$("toolSize").value); context.save(); clipSelection(context); context.lineCap = "round"; context.lineJoin = "round";
-		context.lineWidth = state.tool === "pencil" ? 1 : size; context.globalCompositeOperation = state.tool === "eraser" ? "destination-out" : "source-over"; context.globalAlpha = +$("toolOpacity").value / 100; context.strokeStyle = state.colour;
-		context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke(); context.restore();
+		const layer = activeLayer(), context = layer.canvas.getContext("2d"), size = Math.max(1, +$("toolSize").value); context.save(); context.translate(-(layer.offsetX || 0), -(layer.offsetY || 0)); clipSelection(context); context.globalCompositeOperation = state.tool === "eraser" ? "destination-out" : "source-over"; context.globalAlpha = +$("toolOpacity").value / 100;
+		if (state.tool === "pencil") { context.lineWidth = 1; context.strokeStyle = state.colour; context.beginPath(); context.moveTo(Math.round(from.x) + .5, Math.round(from.y) + .5); context.lineTo(Math.round(to.x) + .5, Math.round(to.y) + .5); context.stroke(); }
+		else { const distance = Math.hypot(to.x - from.x, to.y - from.y), spacing = Math.max(1, size * +$("brushSpacing").value / 100), steps = Math.max(1, Math.ceil(distance / spacing)), hardness = +$("brushHardness").value / 100; for (let i = 0; i <= steps; i++) { const t = i / steps, x = from.x + (to.x - from.x) * t, y = from.y + (to.y - from.y) * t; if (hardness >= .99) context.fillStyle = state.tool === "eraser" ? "#000" : state.colour; else { const gradient = context.createRadialGradient(x, y, size * hardness / 2, x, y, size / 2); gradient.addColorStop(0, state.tool === "eraser" ? "#000" : state.colour); gradient.addColorStop(1, state.tool === "eraser" ? "#0000" : state.colour + "00"); context.fillStyle = gradient; } context.beginPath(); context.arc(x, y, size / 2, 0, Math.PI * 2); context.fill(); } } context.restore();
 	}
 	function drawShape(context, tool, start, end) {
 		context.beginPath(); if (tool === "line") { context.moveTo(start.x, start.y); context.lineTo(end.x, end.y); }
@@ -213,7 +231,8 @@
 		else { const cx = (start.x + end.x) / 2, cy = (start.y + end.y) / 2; context.ellipse(cx, cy, Math.abs(end.x - start.x) / 2, Math.abs(end.y - start.y) / 2, 0, 0, Math.PI * 2); }
 	}
 	function commitShape(tool, start, end) {
-		const context = activeLayer().canvas.getContext("2d"); context.save(); clipSelection(context); context.globalAlpha = +$("toolOpacity").value / 100; context.lineWidth = Math.max(1, +$("toolSize").value); context.strokeStyle = state.colour; context.fillStyle = state.colour; drawShape(context, tool, start, end); $("shapeFill").checked && tool !== "line" ? context.fill() : context.stroke(); context.restore();
+		const asset = activeAsset(), targetLayer = asset.activeLayer; if (!canAllocateLayer(asset)) { const layer = activeLayer(), context = layer.canvas.getContext("2d"); context.save(); context.translate(-(layer.offsetX || 0), -(layer.offsetY || 0)); clipSelection(context); context.globalAlpha = +$("toolOpacity").value / 100; context.lineWidth = Math.max(1, +$("toolSize").value); context.strokeStyle = state.colour; context.fillStyle = state.colour; drawShape(context, tool, start, end); $("shapeFill").checked && tool !== "line" ? context.fill() : context.stroke(); context.restore(); return; }
+		const layerCanvas = makeCanvas(asset.width, asset.height), context = layerCanvas.getContext("2d"); context.globalAlpha = +$("toolOpacity").value / 100; context.lineWidth = Math.max(1, +$("toolSize").value); context.strokeStyle = state.colour; context.fillStyle = state.colour; drawShape(context, tool, start, end); $("shapeFill").checked && tool !== "line" ? context.fill() : context.stroke(); asset.layers.push({name: tool[0].toUpperCase() + tool.slice(1), canvas: layerCanvas, visible: true, opacity: 1, blend: "source-over", floating: true, targetLayer, offsetX: 0, offsetY: 0}); asset.activeLayer = asset.layers.length - 1; asset.selection = {type: "rect", points: [{x: Math.min(start.x, end.x), y: Math.min(start.y, end.y)}, {x: Math.max(start.x, end.x), y: Math.max(start.y, end.y)}]}; selectTool("move", true); syncControls(); showToast("Move the shape, then clear the selection to stamp it");
 	}
 	function drawShapePreview(tool, start, end) {
 		drawSelection(); const context = interactionCanvas.getContext("2d"), a = sourceToCanvas(start), b = sourceToCanvas(end); context.save(); context.lineWidth = 2; context.strokeStyle = state.colour; context.fillStyle = state.colour; drawShape(context, tool, a, b); if ($("shapeFill").checked && tool !== "line") { context.globalAlpha = .35; context.fill(); context.globalAlpha = 1; } else context.stroke();
@@ -226,7 +245,7 @@
 		const sample = compositeSource(), sampleContext = sample.getContext("2d"), pixels = sampleContext.getImageData(0, 0, width, height).data, targetIndex = (y * width + x) * 4;
 		const target = [pixels[targetIndex], pixels[targetIndex + 1], pixels[targetIndex + 2], pixels[targetIndex + 3]], parsed = parseColour(state.colour), colourContext = makeCanvas(1, 1).getContext("2d");
 		colourContext.fillStyle = parsed.css; colourContext.fillRect(0, 0, 1, 1); const fill = colourContext.getImageData(0, 0, 1, 1).data, tolerance = +$("fillTolerance").value * 2.55;
-		const layerContext = activeLayer().canvas.getContext("2d"), image = layerContext.getImageData(0, 0, width, height), out = image.data, seen = new Uint8Array(width * height), stack = [y * width + x], selection = asset.selection;
+		const layer = activeLayer(), layerGlobal = makeCanvas(width, height), layerGlobalContext = layerGlobal.getContext("2d"); layerGlobalContext.drawImage(layer.canvas, layer.offsetX || 0, layer.offsetY || 0); const image = layerGlobalContext.getImageData(0, 0, width, height), out = image.data, seen = new Uint8Array(width * height), stack = [y * width + x], selection = asset.selection;
 		const matches = index => { const i = index * 4; return Math.abs(pixels[i] - target[0]) <= tolerance && Math.abs(pixels[i + 1] - target[1]) <= tolerance && Math.abs(pixels[i + 2] - target[2]) <= tolerance && Math.abs(pixels[i + 3] - target[3]) <= tolerance; };
 		while (stack.length) {
 			const index = stack.pop(); if (index < 0 || index >= width * height || seen[index] || !matches(index)) continue; seen[index] = 1; const px = index % width, py = (index / width) | 0;
@@ -234,28 +253,29 @@
 			const i = index * 4; out[i] = fill[0]; out[i + 1] = fill[1]; out[i + 2] = fill[2]; out[i + 3] = fill[3];
 			if (px) stack.push(index - 1); if (px + 1 < width) stack.push(index + 1); if (py) stack.push(index - width); if (py + 1 < height) stack.push(index + width);
 		}
-		layerContext.putImageData(image, 0, 0);
+		layerGlobalContext.putImageData(image, 0, 0); const layerContext = layer.canvas.getContext("2d"); layerContext.clearRect(0, 0, width, height); layerContext.drawImage(layerGlobal, -(layer.offsetX || 0), -(layer.offsetY || 0));
 	}
 	function openTextDialog(point) {
 		state.textPoint = point; $("textValue").value = ""; $("textDialog").showModal(); setTimeout(() => $("textValue").focus(), 0);
 	}
 	function applyText() {
 		const text = $("textValue").value, point = state.textPoint; if (!text.trim() || !point) return showToast("Enter some text first");
+		if (!canAllocateLayer()) return;
 		const asset = activeAsset(), before = snapshot(), targetLayer = asset.activeLayer, layerCanvas = makeCanvas(asset.width, asset.height), context = layerCanvas.getContext("2d"), size = Math.max(6, +$("textSize").value), weight = $("textBold").checked ? "700" : "400", style = $("textItalic").checked ? "italic" : "normal", align = $("textAlign").value, lines = text.split("\n");
 		context.fillStyle = state.colour; context.globalAlpha = +$("toolOpacity").value / 100; context.font = `${style} ${weight} ${size}px ${$("textFont").value}`; context.textBaseline = "top"; context.textAlign = align;
 		lines.forEach((line, index) => context.fillText(line, point.x, point.y + index * size * 1.25));
 		const width = Math.max(...lines.map(line => context.measureText(line).width), 1), left = align === "center" ? point.x - width / 2 : align === "right" ? point.x - width : point.x, height = Math.max(size, lines.length * size * 1.25);
-		asset.layers.push({name: "Text", canvas: layerCanvas, visible: true, opacity: 1, floating: true, targetLayer}); asset.activeLayer = asset.layers.length - 1; asset.selection = {type: "rect", points: [{x: left, y: point.y}, {x: left + width, y: point.y + height}]};
+		asset.layers.push({name: "Text", canvas: layerCanvas, visible: true, opacity: 1, blend: "source-over", floating: true, targetLayer}); asset.activeLayer = asset.layers.length - 1; asset.selection = {type: "rect", points: [{x: left, y: point.y}, {x: left + width, y: point.y + height}]};
 		pushHistory(before); $("textDialog").close(); state.textPoint = null; selectTool("move", true); syncControls(); render(); showToast("Move text, then clear the selection to stamp it");
 	}
 	function commitFloatingText() {
 		const asset = activeAsset(), layer = activeLayer(); if (!layer?.floating) return;
-		const targetIndex = Math.max(0, Math.min(layer.targetLayer ?? 0, asset.layers.length - 2)), target = asset.layers[targetIndex]; target.canvas.getContext("2d").drawImage(layer.canvas, layer.offsetX || 0, layer.offsetY || 0); asset.layers.splice(asset.activeLayer, 1); asset.activeLayer = targetIndex; asset.selection = null; renderLayers();
+		const targetIndex = Math.max(0, Math.min(layer.targetLayer ?? 0, asset.layers.length - 2)), target = asset.layers[targetIndex]; target.canvas.getContext("2d").drawImage(layer.canvas, (layer.offsetX || 0) - (target.offsetX || 0), (layer.offsetY || 0) - (target.offsetY || 0)); asset.layers.splice(asset.activeLayer, 1); asset.activeLayer = targetIndex; asset.selection = null; renderLayers();
 	}
 	function clearSelectionAndCommit() { if (!activeAsset()) return; commitFloatingText(); activeAsset().selection = null; render(); }
 
 	function selectTool(tool, preserveSelection = false) {
-		if (state.tool !== tool && activeAsset()?.selection && !preserveSelection) { commitFloatingText(); activeAsset().selection = null; drawSelection(); }
+		const selectionTools = ["select", "lasso", "magic"]; if (state.tool !== tool && activeAsset()?.selection && !preserveSelection && !(selectionTools.includes(state.tool) && selectionTools.includes(tool))) { commitFloatingText(); activeAsset().selection = null; drawSelection(); }
 		state.tool = tool; document.querySelectorAll(".paint-tool").forEach(button => button.classList.toggle("active", button.dataset.tool === tool));
 		const names = {move: "Move layer", select: "Rectangle select", lasso: "Lasso select", magic: "Magic wand", eyedropper: "Eyedropper", fill: "Flood fill", pencil: "Pencil", brush: "Brush", clone: "Clone stamp", recolour: "Recolour brush", eraser: "Eraser", line: "Line", rectangle: "Rectangle", ellipse: "Ellipse", text: "Text"};
 		const hints = {move: "Drag the active layer or use the arrow keys.", select: "Drag to select a rectangular area.", lasso: "Draw a freehand selection.", magic: "Click a contiguous colour area; tolerance controls the match.", eyedropper: "Click the image to sample a colour.", fill: "Click to fill a contiguous colour area.", pencil: "Draw a crisp one-pixel line.", brush: "Draw with the selected size and opacity.", clone: "Alt-click to set a source, then paint elsewhere to clone it.", recolour: "Paint colour while retaining the underlying light and shade.", eraser: "Paint transparency onto the active layer.", line: "Drag between the line endpoints.", rectangle: "Drag a rectangle; enable Fill shapes for a solid shape.", ellipse: "Drag an ellipse; enable Fill shapes for a solid shape.", text: "Click the image, enter text, then move it before stamping."};
@@ -273,7 +293,7 @@
 		if (state.tool === "fill") { floodFill(point); pushHistory(before); return render(); }
 		if (state.tool === "magic") { magicSelect(point); pushHistory(before); return render(); }
 		if (state.tool === "text") return openTextDialog(point);
-		if (state.tool === "clone") { if (event.altKey || !state.cloneSource) { state.cloneSource = point; showToast("Clone source set. Paint elsewhere to clone"); return; } const cloneSource = makeCanvas(activeAsset().width, activeAsset().height); cloneSource.getContext("2d").drawImage(activeLayer().canvas, 0, 0); state.gesture = {before, start: point, last: point, points: [point], cloneSource, cloneOffset: {x: state.cloneSource.x - point.x, y: state.cloneSource.y - point.y}}; cloneLine(point, point, state.gesture); return; }
+		if (state.tool === "clone") { if (event.altKey || !state.cloneSource) { state.cloneSource = point; showToast("Clone source set. Paint elsewhere to clone"); return; } const cloneSource = makeCanvas(activeAsset().width, activeAsset().height); cloneSource.getContext("2d").drawImage(activeLayer().canvas, activeLayer().offsetX || 0, activeLayer().offsetY || 0); state.gesture = {before, start: point, last: point, points: [point], cloneSource, cloneOffset: {x: state.cloneSource.x - point.x, y: state.cloneSource.y - point.y}}; cloneLine(point, point, state.gesture); return; }
 		state.gesture = {before, start: point, last: point, points: [point], layerStart: {x: activeLayer().offsetX || 0, y: activeLayer().offsetY || 0}, selectionStart: activeAsset().selection ? JSON.parse(JSON.stringify(activeAsset().selection)) : null};
 		if (["pencil", "brush", "eraser"].includes(state.tool)) paintLine(point, point); else if (state.tool === "recolour") recolourLine(point, point);
 	}
@@ -289,27 +309,36 @@
 	}
 	function pointerUp(event) {
 		if (!state.gesture) return; const point = canvasToSource(pointerPosition(event).x, pointerPosition(event).y), gesture = state.gesture; state.gesture = null;
-		if (state.tool === "select") activeAsset().selection = {type: "rect", points: [gesture.start, point]};
-		else if (state.tool === "lasso") { gesture.points.push(point); if (gesture.points.length > 2) activeAsset().selection = {type: "lasso", points: gesture.points}; }
+		if (state.tool === "select") combineSelection({type: "rect", points: [gesture.start, point]});
+		else if (state.tool === "lasso") { gesture.points.push(point); if (gesture.points.length > 2) combineSelection({type: "lasso", points: gesture.points}); }
 		else if (["line", "rectangle", "ellipse"].includes(state.tool)) commitShape(state.tool, gesture.start, point);
 		pushHistory(gesture.before); render();
 	}
 
 	function clearPixels() {
 		const asset = activeAsset(); if (!asset?.selection) return showToast("Make a selection first"); const before = snapshot(), layer = activeLayer(), context = layer.canvas.getContext("2d");
-		context.save(); context.translate(-(layer.offsetX || 0), -(layer.offsetY || 0)); context.globalCompositeOperation = "destination-out"; selectionPath(context); context.fill(); context.restore(); asset.selection = null; pushHistory(before); render();
+		if (layer.floating) { const target = Math.max(0, Math.min(layer.targetLayer ?? asset.activeLayer - 1, asset.layers.length - 2)); asset.layers.splice(asset.activeLayer, 1); asset.activeLayer = target; asset.selection = null; pushHistory(before, "Delete floating selection"); syncControls(); render(); return; }
+		context.save(); context.globalCompositeOperation = "destination-out"; context.drawImage(selectionMask(), -(layer.offsetX || 0), -(layer.offsetY || 0)); context.restore(); asset.selection = null; pushHistory(before, "Delete selected pixels"); render();
 	}
 	async function copySelection(cut = false) {
 		const asset = activeAsset(); if (!asset?.selection) return showToast("Make a selection first"); const bounds = selectionBounds(), layer = activeLayer(), clip = makeCanvas(Math.ceil(bounds.width), Math.ceil(bounds.height)), context = clip.getContext("2d");
-		context.save(); context.translate(-bounds.x, -bounds.y); selectionPath(context); context.clip(); context.drawImage(layer.canvas, layer.offsetX || 0, layer.offsetY || 0); context.restore(); state.clipboard = {canvas: clip, x: bounds.x, y: bounds.y};
+		context.drawImage(layer.canvas, (layer.offsetX || 0) - bounds.x, (layer.offsetY || 0) - bounds.y); context.globalCompositeOperation = "destination-in"; context.drawImage(selectionMask(), -bounds.x, -bounds.y); state.clipboard = {canvas: clip, x: bounds.x, y: bounds.y};
 		updateActionAvailability();
 		if (cut) clearPixels();
 		try { const blob = await new Promise(resolve => clip.toBlob(resolve, "image/png")); if (blob && navigator.clipboard?.write && window.ClipboardItem) await navigator.clipboard.write([new ClipboardItem({"image/png": blob})]); } catch {}
 		if (!cut) showToast("Selection copied"); else showToast("Selection cut");
 	}
+	function floatSelection() {
+		const asset = activeAsset(); if (!asset?.selection) return showToast("Make a selection first"); if (!canAllocateLayer(asset)) return; const before = snapshot(), sourceIndex = asset.activeLayer, sourceLayer = activeLayer(), mask = selectionMask(), floated = makeCanvas(asset.width, asset.height), floatedContext = floated.getContext("2d"); floatedContext.drawImage(sourceLayer.canvas, sourceLayer.offsetX || 0, sourceLayer.offsetY || 0); floatedContext.globalCompositeOperation = "destination-in"; floatedContext.drawImage(mask, 0, 0);
+		const sourceContext = sourceLayer.canvas.getContext("2d"); sourceContext.save(); sourceContext.globalCompositeOperation = "destination-out"; sourceContext.drawImage(mask, -(sourceLayer.offsetX || 0), -(sourceLayer.offsetY || 0)); sourceContext.restore(); asset.layers.push({name: "Floating selection", canvas: floated, visible: true, opacity: 1, blend: "source-over", floating: true, targetLayer: sourceIndex, offsetX: 0, offsetY: 0}); asset.activeLayer = asset.layers.length - 1; pushHistory(before, "Float selected pixels"); selectTool("move", true); syncControls(); render(); showToast("Selection is movable; clear it to stamp");
+	}
+	function openSelectionResize() { const asset = activeAsset(); if (!asset?.selection) return showToast("Make a selection first"); const bounds = selectionBounds(); $("selectionWidth").value = Math.round(bounds.width); $("selectionHeight").value = Math.round(bounds.height); $("selectionDialog").showModal(); }
+	function resizeSelectedPixels() {
+		const asset = activeAsset(); if (!asset?.selection) return; if (!canAllocateLayer(asset)) return; const bounds = selectionBounds(), width = Math.max(1, Math.min(16384, +$("selectionWidth").value)), height = Math.max(1, Math.min(16384, +$("selectionHeight").value)); if (!Number.isFinite(width) || !Number.isFinite(height) || width * height > 80000000) return showToast("Choose a smaller selection size"); const before = snapshot(), sourceIndex = asset.activeLayer, sourceLayer = activeLayer(), mask = selectionMask(), clipped = makeCanvas(Math.ceil(bounds.width), Math.ceil(bounds.height)), clippedContext = clipped.getContext("2d"); clippedContext.drawImage(sourceLayer.canvas, (sourceLayer.offsetX || 0) - bounds.x, (sourceLayer.offsetY || 0) - bounds.y); clippedContext.globalCompositeOperation = "destination-in"; clippedContext.drawImage(mask, -bounds.x, -bounds.y); const sourceContext = sourceLayer.canvas.getContext("2d"); sourceContext.save(); sourceContext.globalCompositeOperation = "destination-out"; sourceContext.drawImage(mask, -(sourceLayer.offsetX || 0), -(sourceLayer.offsetY || 0)); sourceContext.restore(); const resized = makeCanvas(asset.width, asset.height), resizedContext = resized.getContext("2d"); resizedContext.drawImage(clipped, 0, 0, clipped.width, clipped.height, bounds.x, bounds.y, width, height); asset.layers.push({name: "Resized selection", canvas: resized, visible: true, opacity: 1, blend: "source-over", floating: true, targetLayer: sourceIndex, offsetX: 0, offsetY: 0}); asset.activeLayer = asset.layers.length - 1; asset.selection = {type: "rect", points: [{x: bounds.x, y: bounds.y}, {x: bounds.x + width, y: bounds.y + height}]}; pushHistory(before, "Resize selected pixels"); $("selectionDialog").close(); selectTool("move", true); syncControls(); render();
+	}
 	function pasteCanvas(source, x, y, name = "Pasted selection") {
-		const asset = activeAsset(), before = snapshot(), layerCanvas = makeCanvas(asset.width, asset.height); layerCanvas.getContext("2d").drawImage(source, Math.round(x), Math.round(y));
-		asset.layers.push({name, canvas: layerCanvas, visible: true, opacity: 1}); asset.activeLayer = asset.layers.length - 1; asset.selection = {type: "rect", points: [{x, y}, {x: x + source.width, y: y + source.height}]}; pushHistory(before); selectTool("move", true); syncControls(); render(); showToast("Pasted as new movable layer");
+		const asset = activeAsset(); if (!canAllocateLayer(asset)) return; const before = snapshot(), layerCanvas = makeCanvas(asset.width, asset.height); layerCanvas.getContext("2d").drawImage(source, Math.round(x), Math.round(y));
+		asset.layers.push({name, canvas: layerCanvas, visible: true, opacity: 1, blend: "source-over"}); asset.activeLayer = asset.layers.length - 1; asset.selection = {type: "rect", points: [{x, y}, {x: x + source.width, y: y + source.height}]}; pushHistory(before, "Paste"); selectTool("move", true); syncControls(); render(); showToast("Pasted as new movable layer");
 	}
 	async function pasteSelection() {
 		if (state.clipboard) return pasteCanvas(state.clipboard.canvas, state.clipboard.x + 10, state.clipboard.y + 10);
@@ -332,15 +361,37 @@
 			const opacity = document.createElement("span"); opacity.className = "layer-row-opacity"; opacity.textContent = Math.round(layer.opacity * 100) + "%";
 			row.append(visible, name, opacity); row.addEventListener("click", () => { asset.activeLayer = index; renderLayers(); }); return row;
 		}).reverse());
-		const layer = activeLayer(); if (layer) { $("layerOpacity").value = Math.round(layer.opacity * 100); $("layerOpacityValue").value = Math.round(layer.opacity * 100); }
+			const layer = activeLayer(); if (layer) { $("layerOpacity").value = Math.round(layer.opacity * 100); $("layerOpacityValue").value = Math.round(layer.opacity * 100); }
+		if (layer) $("layerBlend").value = layer.blend || "source-over";
 	}
-	function addLayer(name = "Layer " + (activeAsset().layers.length + 1)) { mutate(asset => { asset.layers.push({name, canvas: makeCanvas(asset.width, asset.height), visible: true, opacity: 1}); asset.activeLayer = asset.layers.length - 1; }); }
+	function addLayer(name = "Layer " + (activeAsset().layers.length + 1)) { if (!canAllocateLayer()) return; mutate(asset => { asset.layers.push({name, canvas: makeCanvas(asset.width, asset.height), visible: true, opacity: 1, blend: "source-over"}); asset.activeLayer = asset.layers.length - 1; }); }
 	function duplicateLayer() { const layer = activeLayer(); if (!layer) return; mutate(asset => { const copy = makeCanvas(asset.width, asset.height); copy.getContext("2d").drawImage(layer.canvas, 0, 0); asset.layers.splice(asset.activeLayer + 1, 0, {...layer, name: layer.name + " copy", canvas: copy}); asset.activeLayer++; }); }
 	function moveLayer(delta) { const asset = activeAsset(), next = asset.activeLayer + delta; if (next < 0 || next >= asset.layers.length) return; mutate(current => { [current.layers[current.activeLayer], current.layers[next]] = [current.layers[next], current.layers[current.activeLayer]]; current.activeLayer = next; }); }
 	function mergeLayerDown() {
 		const asset = activeAsset(); if (asset.activeLayer < 1) return showToast("There is no layer below this one");
-		mutate(current => { const index = current.activeLayer, upper = current.layers[index], lower = current.layers[index - 1], context = lower.canvas.getContext("2d"); if (upper.visible) { context.save(); context.globalAlpha = upper.opacity; context.drawImage(upper.canvas, (upper.offsetX || 0) - (lower.offsetX || 0), (upper.offsetY || 0) - (lower.offsetY || 0)); context.restore(); } current.layers.splice(index, 1); current.activeLayer = index - 1; current.selection = null; });
+		mutate(current => { const index = current.activeLayer, upper = current.layers[index], lower = current.layers[index - 1], context = lower.canvas.getContext("2d"); if (upper.visible) { context.save(); context.globalAlpha = upper.opacity; context.globalCompositeOperation = upper.blend || "source-over"; context.drawImage(upper.canvas, (upper.offsetX || 0) - (lower.offsetX || 0), (upper.offsetY || 0) - (lower.offsetY || 0)); context.restore(); } current.layers.splice(index, 1); current.activeLayer = index - 1; current.selection = null; });
 	}
+	function resizeCanvas() {
+		const asset = activeAsset(), width = Math.max(1, Math.min(16384, +$("canvasWidth").value)), height = Math.max(1, Math.min(16384, +$("canvasHeight").value)); if (!Number.isFinite(width) || !Number.isFinite(height) || width * height > 80000000) return showToast("Choose a canvas no larger than 80 megapixels"); const before = snapshot(), centred = $("canvasAnchor").value === "centre", dx = centred ? Math.round((width - asset.width) / 2) : 0, dy = centred ? Math.round((height - asset.height) / 2) : 0;
+		asset.layers = asset.layers.map(layer => { const resized = makeCanvas(width, height); resized.getContext("2d").drawImage(layer.canvas, (layer.offsetX || 0) + dx, (layer.offsetY || 0) + dy); return {...layer, canvas: resized, offsetX: 0, offsetY: 0}; }); asset.width = width; asset.height = height; asset.edit.crop = {x: 0, y: 0, width, height}; asset.selection = null; pushHistory(before, "Resize canvas"); $("canvasDialog").close(); state.zoom = 0; syncControls(); render();
+	}
+	function applyEffect(kind) {
+		const asset = activeAsset(), layer = activeLayer(); if (!asset || !layer) return; if (asset.width * asset.height > 40000000) return showToast("This effect is disabled above 40 megapixels"); const before = snapshot(), context = layer.canvas.getContext("2d"), image = context.getImageData(0, 0, asset.width, asset.height), data = image.data;
+		if (["grayscale", "sepia", "noise", "levels"].includes(kind)) { const black = Math.min(254, +$("levelBlack").value), white = Math.max(black + 1, +$("levelWhite").value), gamma = Math.max(.1, +$("levelGamma").value); for (let i = 0; i < data.length; i += 4) { if (kind === "grayscale") { const light = Math.round(data[i] * .2126 + data[i + 1] * .7152 + data[i + 2] * .0722); data[i] = data[i + 1] = data[i + 2] = light; } else if (kind === "sepia") { const r = data[i], g = data[i + 1], b = data[i + 2]; data[i] = Math.min(255, r * .393 + g * .769 + b * .189); data[i + 1] = Math.min(255, r * .349 + g * .686 + b * .168); data[i + 2] = Math.min(255, r * .272 + g * .534 + b * .131); } else if (kind === "noise") { const amount = (Math.random() - .5) * 36; data[i] += amount; data[i + 1] += amount; data[i + 2] += amount; } else for (let channel = 0; channel < 3; channel++) data[i + channel] = 255 * Math.pow(Math.max(0, Math.min(1, (data[i + channel] - black) / (white - black))), 1 / gamma); } context.putImageData(image, 0, 0); }
+		if (kind === "pixelate") { const block = Math.max(2, Math.round(Math.min(asset.width, asset.height) / 100)), small = makeCanvas(Math.max(1, Math.ceil(asset.width / block)), Math.max(1, Math.ceil(asset.height / block))), smallContext = small.getContext("2d"); smallContext.imageSmoothingEnabled = false; smallContext.drawImage(layer.canvas, 0, 0, small.width, small.height); context.clearRect(0, 0, asset.width, asset.height); context.imageSmoothingEnabled = false; context.drawImage(small, 0, 0, small.width, small.height, 0, 0, asset.width, asset.height); context.imageSmoothingEnabled = true; }
+		if (kind === "distort") { const source = makeCanvas(asset.width, asset.height); source.getContext("2d").drawImage(layer.canvas, 0, 0); context.clearRect(0, 0, asset.width, asset.height); const amplitude = Math.max(2, Math.round(asset.width / 100)), period = Math.max(12, Math.round(asset.height / 12)); for (let y = 0; y < asset.height; y++) context.drawImage(source, 0, y, asset.width, 1, Math.round(Math.sin(y / period * Math.PI * 2) * amplitude), y, asset.width, 1); }
+		pushHistory(before, kind[0].toUpperCase() + kind.slice(1)); render();
+	}
+	function projectData() { return {format: "pict", version: 1, savedAt: new Date().toISOString(), active: state.active, assets: state.assets.map(asset => ({name: asset.file.name, type: asset.file.type, width: asset.width, height: asset.height, edit: asset.edit, selection: asset.selection, activeLayer: asset.activeLayer, layers: asset.layers.map(layer => ({name: layer.name, visible: layer.visible, opacity: layer.opacity, blend: layer.blend || "source-over", floating: Boolean(layer.floating), targetLayer: layer.targetLayer, offsetX: layer.offsetX || 0, offsetY: layer.offsetY || 0, data: layer.canvas.toDataURL("image/png")}))}))}; }
+	async function loadProject(data) {
+		if (data?.format !== "pict" || data.version !== 1 || !Array.isArray(data.assets)) throw new Error("Not a Pict project"); const assets = []; for (const saved of data.assets) { if (!saved.width || !saved.height || saved.width * saved.height > 40000000 || !Array.isArray(saved.layers) || !saved.layers.length || saved.width * saved.height * saved.layers.length > 96000000 || saved.layers.some(layer => typeof layer.data !== "string" || !layer.data.startsWith("data:image/png;base64,"))) throw new Error("Unsafe project dimensions"); const layers = await Promise.all(saved.layers.map(async layer => ({...layer, canvas: await canvasFromURL(layer.data, saved.width, saved.height)}))), composite = makeCanvas(saved.width, saved.height), compositeContext = composite.getContext("2d"); for (const layer of layers) if (layer.visible) { compositeContext.globalAlpha = layer.opacity; compositeContext.globalCompositeOperation = layer.blend || "source-over"; compositeContext.drawImage(layer.canvas, layer.offsetX || 0, layer.offsetY || 0); } const url = composite.toDataURL("image/png"), image = new Image(); image.src = url; await image.decode(); const file = new File([], saved.name || "project-image.png", {type: saved.type || "image/png"}); assets.push({file, image, url, width: saved.width, height: saved.height, edit: saved.edit, selection: saved.selection || null, activeLayer: Math.min(saved.activeLayer || 0, layers.length - 1), layers}); }
+		state.assets.forEach(asset => { if (asset.url.startsWith("blob:")) URL.revokeObjectURL(asset.url); }); state.assets = assets; state.active = Math.max(0, Math.min(data.active || 0, assets.length - 1)); state.history = []; state.future = []; $("emptyState").hidden = Boolean(assets.length); $("editor").hidden = !assets.length; if (assets.length) selectAsset(state.active); showToast("Pict project opened");
+	}
+	function saveProject() { if (!state.assets.length) return; const blob = new Blob([JSON.stringify(projectData())], {type: "application/json"}); download(blob, cleanName(activeAsset().file.name) + ".pict"); showToast("Pict project saved"); }
+	function openDraftDatabase() { return new Promise((resolve, reject) => { const request = indexedDB.open("pict", 1); request.onupgradeneeded = () => request.result.createObjectStore("drafts"); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); }
+	async function writeDraft() { if (!state.assets.length || state.assets.reduce((sum, asset) => sum + asset.width * asset.height * asset.layers.length, 0) > 32000000) return; try { const db = await openDraftDatabase(), transaction = db.transaction("drafts", "readwrite"); transaction.objectStore("drafts").put(projectData(), "latest"); transaction.oncomplete = () => db.close(); } catch {} }
+	function scheduleDraftSave() { clearTimeout(state.draftTimer); state.draftTimer = setTimeout(writeDraft, 1500); }
+	async function recoverDraft() { try { const db = await openDraftDatabase(), request = db.transaction("drafts").objectStore("drafts").get("latest"); request.onsuccess = async () => { db.close(); if (!request.result) return showToast("No recovery draft found"); try { await loadProject(request.result); } catch { showToast("The recovery draft could not be opened"); } }; } catch { showToast("Draft recovery is unavailable"); } }
 
 	function validCrop() {
 		const asset = activeAsset(), values = ["cropX", "cropY", "cropWidth", "cropHeight"].map(id => Number($(id).value)); if (values.some(value => !Number.isFinite(value)) || values[2] < 1 || values[3] < 1) return null;
@@ -388,6 +439,7 @@
 	}
 	["emptyOpenButton", "addButton"].forEach(id => $(id).addEventListener("click", () => $("fileInput").click()));
 	$("fileInput").addEventListener("change", event => { loadFiles(event.target.files); event.target.value = ""; });
+	$("projectInput").addEventListener("change", async event => { const file = event.target.files[0]; event.target.value = ""; if (!file) return; try { await loadProject(JSON.parse(await file.text())); } catch { showToast("That is not a valid Pict project"); } });
 	document.addEventListener("paste", event => { const files = [...event.clipboardData.items].filter(item => item.kind === "file").map(item => item.getAsFile()); if (!files.length) return; event.preventDefault(); if (!activeAsset()) loadFiles(files); else decodeFile(files[0]).then(({image, url}) => { pasteCanvas(image, activeAsset().edit.crop.x, activeAsset().edit.crop.y, "Pasted image"); URL.revokeObjectURL(url); }); });
 	["dragenter", "dragover"].forEach(type => document.addEventListener(type, event => { event.preventDefault(); if (!$("editor").hidden) $("canvasStage").classList.add("dragging"); }));
 	["dragleave", "drop"].forEach(type => document.addEventListener(type, event => { event.preventDefault(); $("canvasStage").classList.remove("dragging"); }));
@@ -399,7 +451,7 @@
 	document.addEventListener("click", event => { if (!event.target.closest(".app-menu,.menu-trigger")) closeMenus(); });
 	document.querySelectorAll(".app-menu [data-action]").forEach(button => button.addEventListener("click", () => {
 		closeMenus(); const action = button.dataset.action;
-		if (action === "open") $("fileInput").click(); if (action === "export") showTab("export"); if (action === "undo") undo(); if (action === "redo") redo(); if (action === "copy") copySelection(); if (action === "cut") copySelection(true); if (action === "paste") pasteSelection(); if (["transform", "crop", "adjust"].includes(action)) openImageDialog(action);
+		if (action === "open") $("fileInput").click(); if (action === "open-project") $("projectInput").click(); if (action === "save-project") saveProject(); if (action === "recover") recoverDraft(); if (action === "export" && activeAsset()) showTab("export"); if (action === "undo") undo(); if (action === "redo") redo(); if (action === "select-all" && activeAsset()) { activeAsset().selection = {type: "rect", points: [{x: 0, y: 0}, {x: activeAsset().width, y: activeAsset().height}]}; render(); } if (action === "deselect") clearSelectionAndCommit(); if (action === "copy") copySelection(); if (action === "cut") copySelection(true); if (action === "paste") pasteSelection(); if (["transform", "crop", "adjust"].includes(action) && activeAsset()) openImageDialog(action); if (action === "canvas-size" && activeAsset()) { $("canvasWidth").value = activeAsset().width; $("canvasHeight").value = activeAsset().height; $("canvasDialog").showModal(); } if (action === "effects" && activeAsset()) $("effectsDialog").showModal();
 	}));
 	document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => $(button.dataset.close).close()));
 	interactionCanvas.addEventListener("pointerdown", pointerDown); interactionCanvas.addEventListener("pointermove", pointerMove); interactionCanvas.addEventListener("pointerup", pointerUp); interactionCanvas.addEventListener("pointercancel", pointerUp);
@@ -409,8 +461,9 @@
 	document.querySelectorAll("#contextMenu [data-command]").forEach(button => button.addEventListener("click", () => { const command = button.dataset.command; $("contextMenu").classList.remove("show"); if (command === "copy") copySelection(); if (command === "cut") copySelection(true); if (command === "paste") pasteSelection(); if (command === "delete") clearPixels(); if (command === "clear") clearSelectionAndCommit(); }));
 	$("undoButton").addEventListener("click", undo); $("redoButton").addEventListener("click", redo);
 	$("clearSelection").addEventListener("click", clearSelectionAndCommit); $("deleteSelection").addEventListener("click", clearPixels);
+	$("invertSelection").addEventListener("click", invertSelection); $("floatSelection").addEventListener("click", floatSelection); $("resizeSelection").addEventListener("click", openSelectionResize); $("applySelectionSize").addEventListener("click", resizeSelectedPixels);
 	$("cropToSelection").addEventListener("click", () => { if (!activeAsset()?.selection) return showToast("Make a selection first"); mutate(asset => { asset.edit.crop = selectionBounds(); asset.selection = null; }); });
-	$("resetButton").addEventListener("click", () => mutate(asset => { const base = makeCanvas(asset.width, asset.height); base.getContext("2d").drawImage(asset.image, 0, 0); asset.edit = defaultEdit(asset.image); asset.selection = null; asset.layers = [{name: "Background", canvas: base, visible: true, opacity: 1}]; asset.activeLayer = 0; }));
+	$("resetButton").addEventListener("click", () => mutate(asset => { const base = makeCanvas(asset.width, asset.height); base.getContext("2d").drawImage(asset.image, 0, 0); asset.edit = defaultEdit(asset.image); asset.selection = null; asset.layers = [{name: "Background", canvas: base, visible: true, opacity: 1, blend: "source-over"}]; asset.activeLayer = 0; }));
 	$("rotateLeft").addEventListener("click", () => mutate(asset => asset.edit.rotation = (asset.edit.rotation + 270) % 360)); $("rotateRight").addEventListener("click", () => mutate(asset => asset.edit.rotation = (asset.edit.rotation + 90) % 360));
 	$("flipHorizontal").addEventListener("click", () => mutate(asset => asset.edit.flipX = !asset.edit.flipX)); $("flipVertical").addEventListener("click", () => mutate(asset => asset.edit.flipY = !asset.edit.flipY));
 	$("resetCrop").addEventListener("click", () => mutate(asset => asset.edit.crop = {x: 0, y: 0, width: asset.width, height: asset.height}));
@@ -420,6 +473,7 @@
 	$("resetAdjustments").addEventListener("click", () => mutate(asset => adjustmentIds.forEach(id => asset.edit[id] = 0)));
 	$("fillTolerance").addEventListener("input", () => $("toleranceValue").value = $("fillTolerance").value);
 	$("toolOpacity").addEventListener("input", () => $("toolOpacityValue").value = $("toolOpacity").value);
+	$("brushHardness").addEventListener("input", () => $("brushHardnessValue").value = $("brushHardness").value); $("brushSpacing").addEventListener("input", () => $("brushSpacingValue").value = $("brushSpacing").value); $("selectionFeather").addEventListener("input", () => $("featherValue").value = $("selectionFeather").value);
 	$("colourSwatch").addEventListener("click", openColourDialog); $("hueRange").addEventListener("input", () => { syncColourInputs(hsvToRgb({h: +$("hueRange").value, s: +$("saturationInput").value, v: +$("valueInput").value})); drawColourField(); }); $("colourField").addEventListener("pointerdown", sampleColourField); $("colourField").addEventListener("pointermove", event => { if (event.buttons === 1) sampleColourField(event); });
 	$("hexInput").addEventListener("change", () => { const parsed = parseColour($("hexInput").value); if (!parsed) return $("hexInput").setAttribute("aria-invalid", "true"); $("hexInput").removeAttribute("aria-invalid"); syncColourInputs(hexToRgb(parsed.hex)); drawColourField(); });
 	["redInput", "greenInput", "blueInput"].forEach(id => $(id).addEventListener("change", () => { syncColourInputs({r: +$("redInput").value, g: +$("greenInput").value, b: +$("blueInput").value}); drawColourField(); }));
@@ -431,6 +485,10 @@
 	$("mergeLayer").addEventListener("click", mergeLayerDown);
 	$("layerUp").addEventListener("click", () => moveLayer(1)); $("layerDown").addEventListener("click", () => moveLayer(-1)); let layerBefore;
 	$("layerOpacity").addEventListener("pointerdown", () => layerBefore = snapshot()); $("layerOpacity").addEventListener("input", () => { activeLayer().opacity = +$("layerOpacity").value / 100; $("layerOpacityValue").value = $("layerOpacity").value; renderLayers(); render(); }); $("layerOpacity").addEventListener("change", () => { pushHistory(layerBefore); layerBefore = null; });
+	$("layerBlend").addEventListener("change", () => mutate(asset => asset.layers[asset.activeLayer].blend = $("layerBlend").value));
+	$("clearHistory").addEventListener("click", () => { state.history = []; state.future = []; updateHistoryButtons(); });
+	$("gridToggle").addEventListener("click", () => { state.grid = !state.grid; $("gridToggle").classList.toggle("active", state.grid); drawSelection(); });
+	$("applyCanvasSize").addEventListener("click", resizeCanvas); document.querySelectorAll("[data-effect]").forEach(button => button.addEventListener("click", () => applyEffect(button.dataset.effect)));
 	$("zoomIn").addEventListener("click", () => { state.zoom = Math.min(4, (state.zoom || canvas.width / activeAsset().edit.crop.width) * 1.25); render(); }); $("zoomOut").addEventListener("click", () => { state.zoom = Math.max(.05, (state.zoom || canvas.width / activeAsset().edit.crop.width) / 1.25); render(); });
 	$("applyRotation").addEventListener("click", () => mutate(asset => asset.edit.rotation = ((+$("rotationAngle").value % 360) + 360) % 360));
 	$("exportWidth").addEventListener("change", () => { if ($("lockRatio").checked) $("exportHeight").value = outputDimensions(+$("exportWidth").value)[1]; }); $("exportHeight").addEventListener("change", () => { if ($("lockRatio").checked) $("exportWidth").value = Math.round(+$("exportHeight").value * activeAsset().edit.crop.width / activeAsset().edit.crop.height); });
@@ -440,6 +498,8 @@
 	document.addEventListener("keydown", event => {
 		if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)) return; const key = event.key.toLowerCase(), modifier = event.ctrlKey || event.metaKey;
 		if (modifier && key === "o") { event.preventDefault(); return $("fileInput").click(); } if (!activeAsset()) return;
+		if (modifier && event.shiftKey && key === "s") { event.preventDefault(); return saveProject(); }
+		if (modifier && key === "a") { event.preventDefault(); if (event.shiftKey) return clearSelectionAndCommit(); activeAsset().selection = {type: "rect", points: [{x: 0, y: 0}, {x: activeAsset().width, y: activeAsset().height}]}; return render(); }
 		if (modifier && key === "z") { event.preventDefault(); event.shiftKey ? redo() : undo(); } else if (modifier && key === "y") { event.preventDefault(); redo(); } else if (modifier && key === "c") { event.preventDefault(); copySelection(); } else if (modifier && key === "x") { event.preventDefault(); copySelection(true); } else if (modifier && key === "v") { event.preventDefault(); pasteSelection(); } else if (modifier && key === "e") { event.preventDefault(); showTab("export"); } else if (state.tool === "move" && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) { event.preventDefault(); startNudge(event); } else if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); clearPixels(); } else if (event.key === "Escape") { clearSelectionAndCommit(); }
 	});
 	document.addEventListener("keyup", stopNudge);

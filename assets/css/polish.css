@@ -72,6 +72,79 @@
 	grid-column: 1 / -1;
 }
 
+.grid-toggle.active {
+	color: var(--accent);
+	background: #34342f;
+}
+
+.selection-actions {
+	grid-template-columns: 1fr 1fr;
+}
+
+#deleteSelection {
+	grid-column: 1 / -1;
+}
+
+.effect-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+}
+
+.levels-fields {
+	margin: 16px 0 0;
+	padding: 12px;
+	border: 1px solid #424546;
+	border-radius: 2px;
+}
+
+.levels-fields legend {
+	padding: 0 6px;
+	color: #aeb2ae;
+}
+
+.history-list {
+	max-height: 160px;
+	margin: 0;
+	padding: 0;
+	overflow-y: auto;
+	list-style: none;
+}
+
+.history-list li {
+	border-bottom: 1px solid #343738;
+}
+
+.history-list button {
+	width: 100%;
+	padding: 6px 7px;
+	border: 0;
+	background: transparent;
+	color: #aeb2ae;
+	font: inherit;
+	font-size: 0.72rem;
+	text-align: left;
+	cursor: pointer;
+}
+
+.history-list button:hover {
+	background: #303233;
+}
+
+.history-list li:last-child button {
+	color: var(--accent);
+}
+
+.layers-section select {
+	width: 100%;
+	margin-top: 5px;
+	padding: 7px 8px;
+	border: 1px solid #444748;
+	border-radius: 3px;
+	background: #181a1b;
+	color: var(--text);
+}
+
 @media (max-width: 520px) {
 	.active-tool-status {
 		display: none;
