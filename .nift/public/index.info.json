@@ -17,14 +17,15 @@
     "templates/template.html"
   ],
   "reqs": [
-    "public/apple-touch-icon.png",
     "public/assets/css/pict.css",
     "public/assets/css/polish.css",
     "public/assets/css/selection-hue.css",
     "public/assets/css/style.css",
     "public/assets/css/tools.css",
-    "public/assets/js/script.js",
-    "public/favicon-32.png",
-    "public/favicon.svg"
+    "public/assets/images/apple-touch-icon.png",
+    "public/assets/images/favicon-32.png",
+    "public/assets/images/favicon.ico",
+    "public/assets/images/favicon.svg",
+    "public/assets/js/script.js"
   ]
 }
