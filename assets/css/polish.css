@@ -1,0 +1,66 @@
+.canvas-stage {
+	background-color: #242627;
+}
+
+.canvas-wrap {
+	outline: 1px solid #3a3d3e;
+	box-shadow: 0 14px 48px #000c;
+}
+
+.active-tool-status {
+	color: #9da19d;
+	font-size: 0.72rem;
+}
+
+.palette-bar {
+	min-height: 64px;
+	padding-block: 7px;
+}
+
+.palette-grid {
+	grid-template-rows: repeat(2, 22px);
+}
+
+.palette-colour {
+	height: 22px;
+}
+
+.current-colour {
+	margin: 4px;
+}
+
+.colour-fields {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 9px;
+	margin: 14px 0 0;
+	padding: 11px;
+	border: 1px solid #424546;
+	border-radius: 4px;
+}
+
+.colour-fields legend {
+	padding: 0 6px;
+	color: #969b97;
+	font-size: 0.72rem;
+}
+
+.colour-fields label {
+	margin: 0;
+}
+
+.align-field-button {
+	align-self: end;
+	height: 34px;
+	margin-bottom: 0;
+}
+
+.layer-action-wide {
+	grid-column: 1 / -1;
+}
+
+@media (max-width: 520px) {
+	.active-tool-status {
+		display: none;
+	}
+}
