@@ -609,6 +609,23 @@
 	let exportPica;
 	const resamplingHints = {canvas: "Uses the browser's fast native image scaling.", mks2013: "Uses Pica's sharp MKS2013 filter for detailed photographs and web graphics.", lanczos3: "Uses Pica's classic Lanczos3 filter for high-quality photographic downscaling.", nearest: "Preserves hard pixel edges without blending neighbouring colours."};
 	function updateResamplingHint() { const mode = $("exportResampling").value; $("resamplingHint").textContent = resamplingHints[mode] || resamplingHints.canvas; }
+	function openSelectOnPointerRelease(select) {
+		if (typeof select.showPicker !== "function") return;
+		let suppressClick = false;
+		select.addEventListener("pointerdown", event => {
+			if (event.pointerType !== "mouse" || event.button !== 0 || event.offsetX >= select.clientWidth - 36) return;
+			event.preventDefault();
+			const cancel = () => { window.removeEventListener("pointerup", release); window.removeEventListener("pointercancel", cancel); };
+			const release = pointerEvent => {
+				cancel(); const bounds = select.getBoundingClientRect();
+				if (pointerEvent.clientX < bounds.left || pointerEvent.clientX > bounds.right || pointerEvent.clientY < bounds.top || pointerEvent.clientY > bounds.bottom) return;
+				select.focus({preventScroll: true});
+				try { select.showPicker(); suppressClick = true; } catch {}
+			};
+			window.addEventListener("pointerup", release, {once: true}); window.addEventListener("pointercancel", cancel, {once: true});
+		});
+		select.addEventListener("click", event => { if (suppressClick) { event.preventDefault(); suppressClick = false; } });
+	}
 	function sourceExportDimensions() { const asset = activeAsset(), crop = asset.edit.crop, quarter = Math.abs(asset.edit.rotation % 180) === 90; return [Math.max(1, Math.round(quarter ? crop.height : crop.width)), Math.max(1, Math.round(quarter ? crop.width : crop.height))]; }
 	async function renderExport(width, height) {
 		const mode = $("exportResampling").value, output = makeCanvas(width, height);
@@ -722,7 +739,7 @@
 	$("applyLayerTransform").addEventListener("click",applyLayerTransformValues); $("applyPerspective").addEventListener("click",applyPerspectiveWarp);
 	$("exportWidth").addEventListener("change", () => { if ($("lockRatio").checked) $("exportHeight").value = outputDimensions(+$("exportWidth").value)[1]; }); $("exportHeight").addEventListener("change", () => { if ($("lockRatio").checked) $("exportWidth").value = Math.round(+$("exportHeight").value * activeAsset().edit.crop.width / activeAsset().edit.crop.height); });
 	$("exportFormat").addEventListener("change", () => { $("qualityLabel").hidden = $("exportFormat").value === "image/png"; updateMarkup(); }); $("quality").addEventListener("input", () => $("qualityValue").value = $("quality").value);
-	$("exportResampling").addEventListener("change", updateResamplingHint); updateResamplingHint();
+	$("exportResampling").addEventListener("change", updateResamplingHint); openSelectOnPointerRelease($("exportResampling")); updateResamplingHint();
 	$("exportName").addEventListener("input", updateMarkup); document.querySelectorAll("[name=variant]").forEach(input => input.addEventListener("change", updateMarkup)); $("exportButton").addEventListener("click", exportImage); $("variantsButton").addEventListener("click", exportVariants);
 	$("copyMarkup").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("markupOutput").value); showToast("Markup copied"); } catch { $("markupOutput").select(); document.execCommand("copy"); showToast("Markup copied"); } });
 	document.addEventListener("keydown", event => {
