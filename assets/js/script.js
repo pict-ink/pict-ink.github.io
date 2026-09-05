@@ -6,7 +6,7 @@
 	const adjustmentIds = ["brightness", "contrast", "saturation", "warmth", "blur"];
 	const extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"};
 	const colours = ["#f3a6b8", "#ffb38a", "#f6d77d", "#b9e18f", "#80d7bd", "#83cbea", "#aaa7ed", "#d6a0df", "#a92f53", "#b94d22", "#a17a08", "#39752d", "#087363", "#176386", "#50439a", "#792f85"];
-	const state = {assets: [], active: -1, zoom: 0, history: [], future: [], tool: "select", gesture: null, clipboard: null, colour: colours[0], restoring: false, textPoint: null, hue: 345, nudge: null};
+	const state = {assets: [], active: -1, zoom: 0, history: [], future: [], tool: "select", gesture: null, clipboard: null, colour: colours[0], restoring: false, textPoint: null, hue: 345, nudge: null, cloneSource: null};
 	let toastTimer;
 
 	const makeCanvas = (width, height) => { const result = document.createElement("canvas"); result.width = width; result.height = height; return result; };
@@ -24,7 +24,7 @@
 			edit: JSON.stringify(asset.edit),
 			selection: JSON.stringify(asset.selection),
 			activeLayer: asset.activeLayer,
-			layers: asset.layers.map(layer => ({name: layer.name, visible: layer.visible, opacity: layer.opacity, floating: Boolean(layer.floating), targetLayer: layer.targetLayer, data: layer.canvas.toDataURL("image/png")}))
+			layers: asset.layers.map(layer => ({name: layer.name, visible: layer.visible, opacity: layer.opacity, floating: Boolean(layer.floating), targetLayer: layer.targetLayer, offsetX: layer.offsetX || 0, offsetY: layer.offsetY || 0, data: layer.canvas.toDataURL("image/png")}))
 		};
 	}
 	async function canvasFromURL(url, width, height) {
@@ -87,7 +87,7 @@
 		}));
 	}
 	function selectAsset(index) {
-		state.active = index; state.history = []; state.future = []; state.zoom = 0; state.gesture = null; renderAssets(); syncControls(); updateHistoryButtons(); updateActionAvailability(); render();
+		state.active = index; state.history = []; state.future = []; state.zoom = 0; state.gesture = null; state.cloneSource = null; renderAssets(); syncControls(); updateHistoryButtons(); updateActionAvailability(); render();
 	}
 	function syncControls() {
 		const asset = activeAsset(); if (!asset) return; const edit = asset.edit;
@@ -103,7 +103,7 @@
 		target.width = width; target.height = height; context.clearRect(0, 0, width, height); context.save(); context.filter = filterString(edit);
 		context.translate(width / 2, height / 2); context.scale(edit.flipX ? -1 : 1, edit.flipY ? -1 : 1); context.rotate(edit.rotation * Math.PI / 180);
 		const quarter = Math.abs(edit.rotation % 180) === 90, drawWidth = quarter ? height : width, drawHeight = quarter ? width : height;
-		for (const layer of asset.layers) if (layer.visible) { context.globalAlpha = layer.opacity; context.drawImage(layer.canvas, crop.x, crop.y, crop.width, crop.height, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight); }
+		for (const layer of asset.layers) if (layer.visible) { context.globalAlpha = layer.opacity; context.drawImage(layer.canvas, crop.x - (layer.offsetX || 0), crop.y - (layer.offsetY || 0), crop.width, crop.height, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight); }
 		context.restore();
 		if (edit.warmth) { context.save(); context.globalCompositeOperation = "source-atop"; context.globalAlpha = Math.abs(edit.warmth) / 500; context.fillStyle = edit.warmth > 0 ? "#ff9a45" : "#5588ff"; context.fillRect(0, 0, width, height); context.restore(); }
 	}
@@ -136,20 +136,25 @@
 	}
 	function drawSelection(transient) {
 		const context = interactionCanvas.getContext("2d"); context.clearRect(0, 0, interactionCanvas.width, interactionCanvas.height);
-		const selection = transient || activeAsset()?.selection; if (!selection || selection.points.length < 2) return;
+		const selection = transient || activeAsset()?.selection; if (!selection) return;
+		if (selection.type === "magic") { const bounds = selectionBounds(selection), a = sourceToCanvas({x: bounds.x, y: bounds.y}), b = sourceToCanvas({x: bounds.x + bounds.width, y: bounds.y + bounds.height}); context.save(); context.fillStyle = "#d5b87122"; selection.spans.forEach(span => { const p = sourceToCanvas({x: span.x, y: span.y}), q = sourceToCanvas({x: span.x + span.width, y: span.y + 1}); context.fillRect(p.x, p.y, q.x - p.x, q.y - p.y); }); context.setLineDash([5, 4]); context.strokeStyle = "#fff"; context.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y); context.restore(); return; }
+		if (selection.points.length < 2) return;
 		const points = selection.points.map(sourceToCanvas); context.save(); context.beginPath();
 		if (selection.type === "rect") context.rect(points[0].x, points[0].y, points[1].x - points[0].x, points[1].y - points[0].y);
 		else { context.moveTo(points[0].x, points[0].y); points.slice(1).forEach(point => context.lineTo(point.x, point.y)); if (!transient) context.closePath(); }
 		context.setLineDash([5, 4]); context.lineWidth = 1.5; context.strokeStyle = "#fff"; context.stroke(); context.lineDashOffset = 5; context.strokeStyle = "#171819"; context.stroke(); context.restore();
 	}
 	function selectionPath(context, selection = activeAsset().selection) {
-		if (!selection || selection.points.length < 2) return false; const points = selection.points; context.beginPath();
+		if (!selection) return false; context.beginPath();
+		if (selection.type === "magic") { selection.spans.forEach(span => context.rect(span.x, span.y, span.width, 1)); return true; }
+		if (selection.points.length < 2) return false; const points = selection.points;
 		if (selection.type === "rect") context.rect(points[0].x, points[0].y, points[1].x - points[0].x, points[1].y - points[0].y);
 		else { context.moveTo(points[0].x, points[0].y); points.slice(1).forEach(point => context.lineTo(point.x, point.y)); context.closePath(); }
 		return true;
 	}
 	function clipSelection(context) { if (selectionPath(context)) context.clip(); }
 	function selectionBounds(selection = activeAsset().selection) {
+		if (selection.type === "magic") { let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0; selection.spans.forEach(span => { minX = Math.min(minX, span.x); minY = Math.min(minY, span.y); maxX = Math.max(maxX, span.x + span.width); maxY = Math.max(maxY, span.y + 1); }); return {x: minX, y: minY, width: maxX - minX, height: maxY - minY}; }
 		const xs = selection.points.map(point => point.x), ys = selection.points.map(point => point.y), x = Math.max(0, Math.min(...xs)), y = Math.max(0, Math.min(...ys));
 		return {x, y, width: Math.max(1, Math.min(activeAsset().width, Math.max(...xs)) - x), height: Math.max(1, Math.min(activeAsset().height, Math.max(...ys)) - y)};
 	}
@@ -185,8 +190,18 @@
 
 	function compositeSource() {
 		const asset = activeAsset(), result = makeCanvas(asset.width, asset.height), context = result.getContext("2d");
-		for (const layer of asset.layers) if (layer.visible) { context.globalAlpha = layer.opacity; context.drawImage(layer.canvas, 0, 0); } context.globalAlpha = 1; return result;
+		for (const layer of asset.layers) if (layer.visible) { context.globalAlpha = layer.opacity; context.drawImage(layer.canvas, layer.offsetX || 0, layer.offsetY || 0); } context.globalAlpha = 1; return result;
 	}
+	function contiguousSpans(point) {
+		const asset = activeAsset(), width = asset.width, height = asset.height, x = Math.floor(point.x), y = Math.floor(point.y); if (x < 0 || y < 0 || x >= width || y >= height || width * height > 40000000) return null;
+		const pixels = compositeSource().getContext("2d").getImageData(0, 0, width, height).data, start = (y * width + x) * 4, target = pixels.slice(start, start + 4), tolerance = +$("fillTolerance").value * 2.55, seen = new Uint8Array(width * height), selected = new Uint8Array(width * height), stack = [y * width + x];
+		const matches = index => { const i = index * 4; return Math.abs(pixels[i] - target[0]) <= tolerance && Math.abs(pixels[i + 1] - target[1]) <= tolerance && Math.abs(pixels[i + 2] - target[2]) <= tolerance && Math.abs(pixels[i + 3] - target[3]) <= tolerance; };
+		while (stack.length) { const index = stack.pop(); if (index < 0 || index >= width * height || seen[index] || !matches(index)) continue; seen[index] = 1; selected[index] = 1; const px = index % width, py = (index / width) | 0; if (px) stack.push(index - 1); if (px + 1 < width) stack.push(index + 1); if (py) stack.push(index - width); if (py + 1 < height) stack.push(index + width); }
+		const spans = []; for (let py = 0; py < height; py++) for (let px = 0; px < width;) { while (px < width && !selected[py * width + px]) px++; const from = px; while (px < width && selected[py * width + px]) px++; if (px > from) spans.push({x: from, y: py, width: px - from}); } return spans;
+	}
+	function magicSelect(point) { const spans = contiguousSpans(point); if (!spans?.length) return showToast("No matching area found"); activeAsset().selection = {type: "magic", spans}; drawSelection(); updateActionAvailability(); showToast("Similar contiguous pixels selected"); }
+	function recolourLine(from, to) { const context = activeLayer().canvas.getContext("2d"), size = Math.max(1, +$("toolSize").value); context.save(); clipSelection(context); context.globalCompositeOperation = "color"; context.globalAlpha = +$("toolOpacity").value / 100; context.strokeStyle = state.colour; context.lineWidth = size; context.lineCap = "round"; context.lineJoin = "round"; context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke(); context.restore(); }
+	function cloneLine(from, to, gesture) { const context = activeLayer().canvas.getContext("2d"), size = Math.max(1, +$("toolSize").value), distance = Math.hypot(to.x - from.x, to.y - from.y), steps = Math.max(1, Math.ceil(distance / Math.max(1, size / 4))); context.save(); clipSelection(context); context.globalAlpha = +$("toolOpacity").value / 100; for (let i = 0; i <= steps; i++) { const t = i / steps, x = from.x + (to.x - from.x) * t, y = from.y + (to.y - from.y) * t, sx = x + gesture.cloneOffset.x, sy = y + gesture.cloneOffset.y; context.save(); context.beginPath(); context.arc(x, y, size / 2, 0, Math.PI * 2); context.clip(); context.drawImage(gesture.cloneSource, sx - size / 2, sy - size / 2, size, size, x - size / 2, y - size / 2, size, size); context.restore(); } context.restore(); }
 	function paintLine(from, to) {
 		const context = activeLayer().canvas.getContext("2d"), size = Math.max(1, +$("toolSize").value); context.save(); clipSelection(context); context.lineCap = "round"; context.lineJoin = "round";
 		context.lineWidth = state.tool === "pencil" ? 1 : size; context.globalCompositeOperation = state.tool === "eraser" ? "destination-out" : "source-over"; context.globalAlpha = +$("toolOpacity").value / 100; context.strokeStyle = state.colour;
@@ -235,35 +250,39 @@
 	}
 	function commitFloatingText() {
 		const asset = activeAsset(), layer = activeLayer(); if (!layer?.floating) return;
-		const targetIndex = Math.max(0, Math.min(layer.targetLayer ?? 0, asset.layers.length - 2)), target = asset.layers[targetIndex]; target.canvas.getContext("2d").drawImage(layer.canvas, 0, 0); asset.layers.splice(asset.activeLayer, 1); asset.activeLayer = targetIndex; asset.selection = null; renderLayers();
+		const targetIndex = Math.max(0, Math.min(layer.targetLayer ?? 0, asset.layers.length - 2)), target = asset.layers[targetIndex]; target.canvas.getContext("2d").drawImage(layer.canvas, layer.offsetX || 0, layer.offsetY || 0); asset.layers.splice(asset.activeLayer, 1); asset.activeLayer = targetIndex; asset.selection = null; renderLayers();
 	}
 	function clearSelectionAndCommit() { if (!activeAsset()) return; commitFloatingText(); activeAsset().selection = null; render(); }
 
 	function selectTool(tool, preserveSelection = false) {
 		if (state.tool !== tool && activeAsset()?.selection && !preserveSelection) { commitFloatingText(); activeAsset().selection = null; drawSelection(); }
 		state.tool = tool; document.querySelectorAll(".paint-tool").forEach(button => button.classList.toggle("active", button.dataset.tool === tool));
-		const names = {move: "Move layer", select: "Rectangle select", lasso: "Lasso select", eyedropper: "Eyedropper", fill: "Flood fill", pencil: "Pencil", brush: "Brush", eraser: "Eraser", line: "Line", rectangle: "Rectangle", ellipse: "Ellipse", text: "Text"};
-		$("activeToolName").textContent = names[tool]; $("activeToolStatus").textContent = names[tool]; interactionCanvas.style.cursor = tool === "move" ? "move" : tool === "fill" ? "cell" : tool === "text" ? "text" : "crosshair"; updateActionAvailability();
+		const names = {move: "Move layer", select: "Rectangle select", lasso: "Lasso select", magic: "Magic wand", eyedropper: "Eyedropper", fill: "Flood fill", pencil: "Pencil", brush: "Brush", clone: "Clone stamp", recolour: "Recolour brush", eraser: "Eraser", line: "Line", rectangle: "Rectangle", ellipse: "Ellipse", text: "Text"};
+		const hints = {move: "Drag the active layer or use the arrow keys.", select: "Drag to select a rectangular area.", lasso: "Draw a freehand selection.", magic: "Click a contiguous colour area; tolerance controls the match.", eyedropper: "Click the image to sample a colour.", fill: "Click to fill a contiguous colour area.", pencil: "Draw a crisp one-pixel line.", brush: "Draw with the selected size and opacity.", clone: "Alt-click to set a source, then paint elsewhere to clone it.", recolour: "Paint colour while retaining the underlying light and shade.", eraser: "Paint transparency onto the active layer.", line: "Drag between the line endpoints.", rectangle: "Drag a rectangle; enable Fill shapes for a solid shape.", ellipse: "Drag an ellipse; enable Fill shapes for a solid shape.", text: "Click the image, enter text, then move it before stamping."};
+		$("activeToolName").textContent = names[tool]; $("activeToolStatus").textContent = names[tool]; $("toolHint").textContent = hints[tool]; interactionCanvas.style.cursor = tool === "move" ? "move" : tool === "fill" ? "cell" : tool === "text" ? "text" : "crosshair"; updateActionAvailability();
 	}
 	function pointerPosition(event) { const rect = interactionCanvas.getBoundingClientRect(); return {x: (event.clientX - rect.left) * interactionCanvas.width / rect.width, y: (event.clientY - rect.top) * interactionCanvas.height / rect.height}; }
 	function shiftActiveLayer(dx, dy) {
-		if (!dx && !dy) return; const layer = activeLayer(), copy = makeCanvas(layer.canvas.width, layer.canvas.height); copy.getContext("2d").drawImage(layer.canvas, 0, 0);
-		const context = layer.canvas.getContext("2d"); context.clearRect(0, 0, layer.canvas.width, layer.canvas.height); context.drawImage(copy, Math.round(dx), Math.round(dy));
-		if (activeAsset().selection) activeAsset().selection.points.forEach(point => { point.x += dx; point.y += dy; });
+		if (!dx && !dy) return; const layer = activeLayer(), oldX = layer.offsetX || 0, oldY = layer.offsetY || 0; layer.offsetX = Math.round(oldX + dx); layer.offsetY = Math.round(oldY + dy); const movedX = layer.offsetX - oldX, movedY = layer.offsetY - oldY, selection = activeAsset().selection;
+		if (selection?.type === "magic") selection.spans.forEach(span => { span.x += movedX; span.y += movedY; }); else if (selection) selection.points.forEach(point => { point.x += movedX; point.y += movedY; });
 	}
 	function pointerDown(event) {
 		if (!activeAsset() || event.button !== 0) return; event.preventDefault(); interactionCanvas.setPointerCapture(event.pointerId);
 		const local = pointerPosition(event), point = canvasToSource(local.x, local.y), before = snapshot();
 		if (state.tool === "eyedropper") { const pixel = canvas.getContext("2d").getImageData(Math.max(0, Math.min(canvas.width - 1, local.x)), Math.max(0, Math.min(canvas.height - 1, local.y)), 1, 1).data; setColour("#" + [...pixel.slice(0, 3)].map(v => v.toString(16).padStart(2, "0")).join("")); return showToast("Colour sampled"); }
 		if (state.tool === "fill") { floodFill(point); pushHistory(before); return render(); }
+		if (state.tool === "magic") { magicSelect(point); pushHistory(before); return render(); }
 		if (state.tool === "text") return openTextDialog(point);
-		state.gesture = {before, start: point, last: point, points: [point]};
-		if (["pencil", "brush", "eraser"].includes(state.tool)) paintLine(point, point);
+		if (state.tool === "clone") { if (event.altKey || !state.cloneSource) { state.cloneSource = point; showToast("Clone source set. Paint elsewhere to clone"); return; } const cloneSource = makeCanvas(activeAsset().width, activeAsset().height); cloneSource.getContext("2d").drawImage(activeLayer().canvas, 0, 0); state.gesture = {before, start: point, last: point, points: [point], cloneSource, cloneOffset: {x: state.cloneSource.x - point.x, y: state.cloneSource.y - point.y}}; cloneLine(point, point, state.gesture); return; }
+		state.gesture = {before, start: point, last: point, points: [point], layerStart: {x: activeLayer().offsetX || 0, y: activeLayer().offsetY || 0}, selectionStart: activeAsset().selection ? JSON.parse(JSON.stringify(activeAsset().selection)) : null};
+		if (["pencil", "brush", "eraser"].includes(state.tool)) paintLine(point, point); else if (state.tool === "recolour") recolourLine(point, point);
 	}
 	function pointerMove(event) {
 		if (!state.gesture) return; const local = pointerPosition(event), point = canvasToSource(local.x, local.y), gesture = state.gesture;
-		if (state.tool === "move") { shiftActiveLayer(point.x - gesture.last.x, point.y - gesture.last.y); gesture.last = point; render(); }
+		if (state.tool === "move") { const layer = activeLayer(), dx = Math.round(point.x - gesture.start.x), dy = Math.round(point.y - gesture.start.y); layer.offsetX = gesture.layerStart.x + dx; layer.offsetY = gesture.layerStart.y + dy; if (gesture.selectionStart?.type === "magic") activeAsset().selection = {...gesture.selectionStart, spans: gesture.selectionStart.spans.map(span => ({...span, x: span.x + dx, y: span.y + dy}))}; else if (gesture.selectionStart) activeAsset().selection = {...gesture.selectionStart, points: gesture.selectionStart.points.map(source => ({x: source.x + dx, y: source.y + dy}))}; gesture.last = point; render(); }
 		else if (["pencil", "brush", "eraser"].includes(state.tool)) { paintLine(gesture.last, point); gesture.last = point; render(); }
+		else if (state.tool === "clone") { cloneLine(gesture.last, point, gesture); gesture.last = point; render(); }
+		else if (state.tool === "recolour") { recolourLine(gesture.last, point); gesture.last = point; render(); }
 		else if (state.tool === "select") drawSelection({type: "rect", points: [gesture.start, point]});
 		else if (state.tool === "lasso") { gesture.points.push(point); drawSelection({type: "lasso", points: gesture.points}); }
 		else drawShapePreview(state.tool, gesture.start, point);
@@ -277,15 +296,16 @@
 	}
 
 	function clearPixels() {
-		const asset = activeAsset(); if (!asset?.selection) return showToast("Make a selection first"); const before = snapshot(), context = activeLayer().canvas.getContext("2d");
-		context.save(); context.globalCompositeOperation = "destination-out"; selectionPath(context); context.fill(); context.restore(); asset.selection = null; pushHistory(before); render();
+		const asset = activeAsset(); if (!asset?.selection) return showToast("Make a selection first"); const before = snapshot(), layer = activeLayer(), context = layer.canvas.getContext("2d");
+		context.save(); context.translate(-(layer.offsetX || 0), -(layer.offsetY || 0)); context.globalCompositeOperation = "destination-out"; selectionPath(context); context.fill(); context.restore(); asset.selection = null; pushHistory(before); render();
 	}
 	async function copySelection(cut = false) {
-		const asset = activeAsset(); if (!asset?.selection) return showToast("Make a selection first"); const bounds = selectionBounds(), source = compositeSource(), clip = makeCanvas(Math.ceil(bounds.width), Math.ceil(bounds.height)), context = clip.getContext("2d");
-		context.save(); context.translate(-bounds.x, -bounds.y); selectionPath(context); context.clip(); context.drawImage(source, 0, 0); context.restore(); state.clipboard = {canvas: clip, x: bounds.x, y: bounds.y};
+		const asset = activeAsset(); if (!asset?.selection) return showToast("Make a selection first"); const bounds = selectionBounds(), layer = activeLayer(), clip = makeCanvas(Math.ceil(bounds.width), Math.ceil(bounds.height)), context = clip.getContext("2d");
+		context.save(); context.translate(-bounds.x, -bounds.y); selectionPath(context); context.clip(); context.drawImage(layer.canvas, layer.offsetX || 0, layer.offsetY || 0); context.restore(); state.clipboard = {canvas: clip, x: bounds.x, y: bounds.y};
 		updateActionAvailability();
+		if (cut) clearPixels();
 		try { const blob = await new Promise(resolve => clip.toBlob(resolve, "image/png")); if (blob && navigator.clipboard?.write && window.ClipboardItem) await navigator.clipboard.write([new ClipboardItem({"image/png": blob})]); } catch {}
-		if (cut) clearPixels(); else showToast("Selection copied");
+		if (!cut) showToast("Selection copied"); else showToast("Selection cut");
 	}
 	function pasteCanvas(source, x, y, name = "Pasted selection") {
 		const asset = activeAsset(), before = snapshot(), layerCanvas = makeCanvas(asset.width, asset.height); layerCanvas.getContext("2d").drawImage(source, Math.round(x), Math.round(y));
@@ -319,7 +339,7 @@
 	function moveLayer(delta) { const asset = activeAsset(), next = asset.activeLayer + delta; if (next < 0 || next >= asset.layers.length) return; mutate(current => { [current.layers[current.activeLayer], current.layers[next]] = [current.layers[next], current.layers[current.activeLayer]]; current.activeLayer = next; }); }
 	function mergeLayerDown() {
 		const asset = activeAsset(); if (asset.activeLayer < 1) return showToast("There is no layer below this one");
-		mutate(current => { const index = current.activeLayer, upper = current.layers[index], lower = current.layers[index - 1], context = lower.canvas.getContext("2d"); if (upper.visible) { context.save(); context.globalAlpha = upper.opacity; context.drawImage(upper.canvas, 0, 0); context.restore(); } current.layers.splice(index, 1); current.activeLayer = index - 1; current.selection = null; });
+		mutate(current => { const index = current.activeLayer, upper = current.layers[index], lower = current.layers[index - 1], context = lower.canvas.getContext("2d"); if (upper.visible) { context.save(); context.globalAlpha = upper.opacity; context.drawImage(upper.canvas, (upper.offsetX || 0) - (lower.offsetX || 0), (upper.offsetY || 0) - (lower.offsetY || 0)); context.restore(); } current.layers.splice(index, 1); current.activeLayer = index - 1; current.selection = null; });
 	}
 
 	function validCrop() {
