@@ -1,5 +1,5 @@
 <a class="skip-link" href="#workspace">Skip to editor</a>
-<header class="topbar">
+<header class="topbar" id="topbar" hidden>
 	<div class="brand"><span class="brand-mark" aria-hidden="true">P</span><span>Pict</span></div>
 	<nav class="menu-bar" aria-label="Application menu">
 		<button class="menu-trigger" data-menu="fileMenu" type="button" aria-haspopup="menu" aria-expanded="false">File</button>
@@ -92,6 +92,7 @@
 					<label class="check-label"><input id="shapeFill" type="checkbox"> Fill shapes</label>
 					<label class="range-label"><span>Fill tolerance <output id="toleranceValue">24</output></span><input id="fillTolerance" type="range" min="0" max="100" value="24"></label>
 					<label class="range-label"><span>Feather <output id="featherValue">0</output> px</span><input id="selectionFeather" type="range" min="0" max="50" value="0"></label>
+					<label class="range-label selection-hue" id="selectionHueControl" hidden><span>Selection hue <output id="selectionHueValue">0</output>°</span><input id="selectionHue" type="range" min="-180" max="180" value="0" aria-describedby="selectionHueHelp"><small id="selectionHueHelp">Drag to shift colours inside the current selection.</small></label>
 					<div class="selection-actions"><button class="button secondary" id="invertSelection" type="button">Invert</button><button class="button secondary" id="floatSelection" type="button">Move pixels</button><button class="button secondary" id="resizeSelection" type="button">Resize pixels</button><button class="button secondary" id="cropToSelection" type="button">Crop selection</button><button class="button secondary" id="deleteSelection" type="button">Delete selection</button></div>
 				</section>
 				<section class="control-section image-control-section" id="transformSection">
