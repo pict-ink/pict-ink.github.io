@@ -203,10 +203,11 @@
 		return true;
 	}
 	function clipSelection(context) { if (selectionPath(context)) context.clip(); }
-	function selectionBounds(selection = activeAsset().selection) {
+	function selectionBounds(selection = activeAsset().selection, clipToCanvas = true) {
 		if (selection.type === "magic") { let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0; selection.spans.forEach(span => { minX = Math.min(minX, span.x); minY = Math.min(minY, span.y); maxX = Math.max(maxX, span.x + span.width); maxY = Math.max(maxY, span.y + 1); }); return {x: minX, y: minY, width: maxX - minX, height: maxY - minY}; }
-		const boundaryPoints = selection.type === "path" ? selection.points.flatMap(point => [point, point.in, point.out].filter(Boolean)) : selection.points, xs = boundaryPoints.map(point => point.x), ys = boundaryPoints.map(point => point.y), x = Math.max(0, Math.min(...xs)), y = Math.max(0, Math.min(...ys));
-		return {x, y, width: Math.max(1, Math.min(activeAsset().width, Math.max(...xs)) - x), height: Math.max(1, Math.min(activeAsset().height, Math.max(...ys)) - y)};
+		const boundaryPoints = selection.type === "path" ? selection.points.flatMap(point => [point, point.in, point.out].filter(Boolean)) : selection.points, xs = boundaryPoints.map(point => point.x), ys = boundaryPoints.map(point => point.y), minX = Math.min(...xs), minY = Math.min(...ys), maxX = Math.max(...xs), maxY = Math.max(...ys);
+		if (!clipToCanvas) return {x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY)}; const x = Math.max(0, minX), y = Math.max(0, minY);
+		return {x, y, width: Math.max(1, Math.min(activeAsset().width, maxX) - x), height: Math.max(1, Math.min(activeAsset().height, maxY) - y)};
 	}
 	function drawSelectionDraft(context) {
 		const draft = state.selectionDraft; if (!draft?.points.length) return; const points = draft.points.map(sourceToCanvas);
@@ -236,7 +237,7 @@
 	}
 	function transformHandles(selection = activeAsset()?.selection) {
 		if (!selection || state.tool !== "move" || !activeLayer()?.floating) return [];
-		const bounds = selectionBounds(selection), left = bounds.x, top = bounds.y, right = left + bounds.width, bottom = top + bounds.height, centreX = (left + right) / 2, centreY = (top + bottom) / 2;
+		const bounds = selectionBounds(selection, false), left = bounds.x, top = bounds.y, right = left + bounds.width, bottom = top + bounds.height, centreX = (left + right) / 2, centreY = (top + bottom) / 2;
 		const entries = [["nw",left,top],["n",centreX,top],["ne",right,top],["e",right,centreY],["se",right,bottom],["s",centreX,bottom],["sw",left,bottom],["w",left,centreY]].map(([name,x,y]) => ({name, source:{x,y}, canvas:sourceToCanvas({x,y})}));
 		const topCanvas = sourceToCanvas({x:centreX,y:top}), centreCanvas = sourceToCanvas({x:centreX,y:centreY}), dx = topCanvas.x-centreCanvas.x, dy = topCanvas.y-centreCanvas.y, length = Math.hypot(dx,dy) || 1;
 		entries.push({name:"rotate", source:{x:centreX,y:top}, canvas:{x:topCanvas.x + dx / length * 26, y:topCanvas.y + dy / length * 26}}); return entries;
@@ -251,7 +252,7 @@
 	function toolCursor() { return state.tool === "move" ? "move" : state.tool === "fill" ? "cell" : state.tool === "text" ? "text" : "crosshair"; }
 	function transformHandleCursor(handle) {
 		if (!handle) return toolCursor(); if (handle.name === "rotate") return rotateCursor;
-		const bounds = selectionBounds(), centre = sourceToCanvas({x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2}), angle = ((Math.atan2(handle.canvas.y - centre.y, handle.canvas.x - centre.x) * 180 / Math.PI) % 180 + 180) % 180;
+		const bounds = selectionBounds(undefined, false), centre = sourceToCanvas({x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2}), angle = ((Math.atan2(handle.canvas.y - centre.y, handle.canvas.x - centre.x) * 180 / Math.PI) % 180 + 180) % 180;
 		if (angle < 22.5 || angle >= 157.5) return "ew-resize"; if (angle < 67.5) return "nwse-resize"; if (angle < 112.5) return "ns-resize"; return "nesw-resize";
 	}
 	function updateCanvasCursor(local) {
@@ -259,7 +260,7 @@
 		interactionCanvas.style.cursor = transformHandleCursor(state.tool === "move" ? hitTransformHandle(local) : null);
 	}
 	function beginTransform(handle, point, before) {
-		const asset = activeAsset(), layer = activeLayer(), bounds = selectionBounds(), global = makeCanvas(asset.width, asset.height), crop = makeCanvas(Math.ceil(bounds.width), Math.ceil(bounds.height)); global.getContext("2d").drawImage(layer.canvas, layer.offsetX||0, layer.offsetY||0); crop.getContext("2d").drawImage(global, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, crop.width, crop.height);
+		const asset = activeAsset(), layer = activeLayer(), bounds = selectionBounds(undefined, false), crop = makeCanvas(Math.ceil(bounds.width), Math.ceil(bounds.height)); crop.getContext("2d").drawImage(layer.canvas, (layer.offsetX || 0) - bounds.x, (layer.offsetY || 0) - bounds.y);
 		return {before,start:point,last:point,transform:handle.name,bounds:{...bounds},crop,centre:{x:bounds.x+bounds.width/2,y:bounds.y+bounds.height/2},startAngle:Math.atan2(point.y-(bounds.y+bounds.height/2),point.x-(bounds.x+bounds.width/2))};
 	}
 	function updateSelectionTransform(gesture, point, keepRatio) {
