@@ -3,6 +3,10 @@
 	overflow-y: auto;
 }
 
+.canvas-area {
+	grid-template-rows: 48px minmax(0, 1fr) 56px 34px;
+}
+
 .ruler {
 	position: sticky;
 	z-index: 4;
@@ -42,7 +46,8 @@
 	cursor: default;
 }
 
-.layer-kind[title="Edit text"] {
+.layer-kind[title="Edit text"],
+.layer-kind[title="Edit adjustment"] {
 	color: var(--accent);
 	cursor: pointer;
 }
