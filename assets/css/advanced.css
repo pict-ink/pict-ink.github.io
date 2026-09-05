@@ -1,0 +1,62 @@
+.effects-menu {
+	max-height: calc(100vh - 70px);
+	overflow-y: auto;
+}
+
+.ruler {
+	position: sticky;
+	z-index: 4;
+	display: block;
+	background: #1c1e1f;
+	cursor: crosshair;
+}
+
+.ruler[hidden] {
+	display: none;
+}
+
+.ruler-horizontal {
+	top: 0;
+	left: 0;
+	align-self: flex-start;
+	width: 100%;
+	height: 24px;
+	margin-right: -100%;
+}
+
+.ruler-vertical {
+	top: 0;
+	left: 0;
+	align-self: stretch;
+	width: 24px;
+	height: 100%;
+	margin-right: -24px;
+}
+
+.layer-kind {
+	min-width: 30px;
+	padding: 2px;
+	border: 0;
+	background: transparent;
+	color: #858a86;
+	cursor: default;
+}
+
+.layer-kind[title="Edit text"] {
+	color: var(--accent);
+	cursor: pointer;
+}
+
+.layer-kind[title="Editing mask"] {
+	color: #80d7bd;
+}
+
+.selection-actions .button,
+.layer-actions .button {
+	min-height: 34px;
+}
+
+#correctionDialog .range-label,
+#adjustmentDialog .range-label {
+	display: block;
+}
