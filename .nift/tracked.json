@@ -1,0 +1,9 @@
+{
+  "tracked": [
+    {
+      "name": "/",
+      "title": "Lumen - Private browser image editor",
+      "template": "templates/template.html"
+    }
+  ]
+}
