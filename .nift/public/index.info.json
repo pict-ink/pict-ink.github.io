@@ -27,6 +27,7 @@
     "public/assets/images/favicon-32.png",
     "public/assets/images/favicon.ico",
     "public/assets/images/favicon.svg",
-    "public/assets/js/script.js"
+    "public/assets/js/script.js",
+    "public/assets/js/vendor/pica.min.js"
   ]
 }
