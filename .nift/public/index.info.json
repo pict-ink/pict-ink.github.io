@@ -1,6 +1,6 @@
 {
   "name": "/",
-  "title": "Lumen - Private browser image editor",
+  "title": "Lumen",
   "template": "templates/template.html",
   "content": "content/index.html",
   "output": "public/index.html",
