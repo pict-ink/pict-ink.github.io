@@ -6,7 +6,7 @@
 	const adjustmentIds = ["brightness", "contrast", "saturation", "warmth", "blur"];
 	const extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"};
 	const colours = ["#f3a6b8", "#ffbf91", "#f7dc8a", "#bfe3a1", "#92d8d0", "#9ec9f2", "#b9afe8", "#d3a6dc", "#fff1df", "#d9d5cc", "#a6adb0", "#71787b", "#424749", "#252829", "#17191a", "#090a0a"];
-	const state = {assets: [], active: -1, zoom: 0, history: [], future: [], tool: "select", gesture: null, clipboard: null, colour: colours[0], restoring: false};
+	const state = {assets: [], active: -1, zoom: 0, history: [], future: [], tool: "select", gesture: null, clipboard: null, colour: colours[0], restoring: false, textPoint: null, hue: 345};
 	let toastTimer;
 
 	const makeCanvas = (width, height) => { const result = document.createElement("canvas"); result.width = width; result.height = height; return result; };
@@ -41,6 +41,15 @@
 		state.history.push(before); if (state.history.length > 25) state.history.shift(); state.future = []; updateHistoryButtons();
 	}
 	function updateHistoryButtons() { $("undoButton").disabled = !state.history.length || state.restoring; $("redoButton").disabled = !state.future.length || state.restoring; }
+	function updateActionAvailability() {
+		const selected = Boolean(activeAsset()?.selection), pasteable = Boolean(state.clipboard);
+		$("copyButton").hidden = !selected; $("cutButton").hidden = !selected; $("pasteButton").hidden = !pasteable;
+		document.querySelectorAll('[data-command="copy"],[data-command="cut"]').forEach(button => button.hidden = !selected);
+		document.querySelectorAll('[data-command="paste"]').forEach(button => button.hidden = !pasteable);
+		document.querySelectorAll('[data-command="delete"],[data-command="clear"]').forEach(button => button.hidden = !selected);
+		document.querySelectorAll('[data-action="copy"],[data-action="cut"]').forEach(button => button.hidden = !selected);
+		document.querySelectorAll('[data-action="paste"]').forEach(button => button.hidden = !pasteable);
+	}
 	async function undo() {
 		if (!state.history.length || state.restoring) return;
 		const current = snapshot(), saved = state.history.pop(); state.future.push(current); await restoreSnapshot(saved); syncControls(); render(); updateHistoryButtons();
@@ -79,7 +88,7 @@
 		}));
 	}
 	function selectAsset(index) {
-		state.active = index; state.history = []; state.future = []; state.zoom = 0; state.gesture = null; renderAssets(); syncControls(); updateHistoryButtons(); render();
+		state.active = index; state.history = []; state.future = []; state.zoom = 0; state.gesture = null; renderAssets(); syncControls(); updateHistoryButtons(); updateActionAvailability(); render();
 	}
 	function syncControls() {
 		const asset = activeAsset(); if (!asset) return; const edit = asset.edit;
@@ -108,6 +117,7 @@
 		$("zoomOutput").value = state.zoom ? Math.round(scale * 100) + "%" : "Fit";
 		$("sourceInfo").textContent = asset.file.name + " · " + asset.width + " × " + asset.height + " · " + formatBytes(asset.file.size);
 		$("editedInfo").textContent = Math.round(crop.width) + " × " + Math.round(crop.height) + " · " + asset.layers.length + (asset.layers.length === 1 ? " layer" : " layers");
+		updateActionAvailability();
 	}
 	function mutate(change) { const before = snapshot(); change(activeAsset()); pushHistory(before); syncControls(); render(); }
 
@@ -157,6 +167,16 @@
 	function renderPalette() {
 		$("paletteBar").replaceChildren(...colours.map(colour => { const button = document.createElement("button"); button.type = "button"; button.className = "palette-colour"; button.style.background = colour; button.title = colour; button.setAttribute("aria-label", "Use colour " + colour); button.addEventListener("click", () => setColour(colour)); return button; }));
 	}
+	function drawColourField() {
+		const field = $("colourField"), context = field.getContext("2d"); context.clearRect(0, 0, field.width, field.height); context.fillStyle = `hsl(${state.hue} 100% 50%)`; context.fillRect(0, 0, field.width, field.height);
+		const white = context.createLinearGradient(0, 0, field.width, 0); white.addColorStop(0, "#fff"); white.addColorStop(1, "#fff0"); context.fillStyle = white; context.fillRect(0, 0, field.width, field.height);
+		const black = context.createLinearGradient(0, 0, 0, field.height); black.addColorStop(0, "#0000"); black.addColorStop(1, "#000"); context.fillStyle = black; context.fillRect(0, 0, field.width, field.height);
+	}
+	function openColourDialog() { $("colorText").value = state.colour; $("hueRange").value = state.hue; drawColourField(); $("colourDialog").showModal(); }
+	function sampleColourField(event) {
+		const field = $("colourField"), rect = field.getBoundingClientRect(), x = Math.max(0, Math.min(field.width - 1, (event.clientX - rect.left) * field.width / rect.width)), y = Math.max(0, Math.min(field.height - 1, (event.clientY - rect.top) * field.height / rect.height));
+		const pixel = field.getContext("2d").getImageData(x, y, 1, 1).data, value = "#" + [...pixel.slice(0, 3)].map(channel => channel.toString(16).padStart(2, "0")).join(""); $("colorText").value = value; $("colourSwatch").style.background = value;
+	}
 
 	function compositeSource() {
 		const asset = activeAsset(), result = makeCanvas(asset.width, asset.height), context = result.getContext("2d");
@@ -194,30 +214,41 @@
 		}
 		layerContext.putImageData(image, 0, 0);
 	}
-	function insertText(point) {
-		const text = $("textValue").value; if (!text) return showToast("Enter some text first"); const before = snapshot(), context = activeLayer().canvas.getContext("2d");
-		context.save(); clipSelection(context); context.fillStyle = state.colour; context.font = `${Math.max(6, +$("textSize").value)}px system-ui, sans-serif`; context.textBaseline = "top"; context.fillText(text, point.x, point.y); context.restore(); pushHistory(before); render();
+	function openTextDialog(point) {
+		state.textPoint = point; $("textValue").value = ""; $("textDialog").showModal(); setTimeout(() => $("textValue").focus(), 0);
+	}
+	function applyText() {
+		const text = $("textValue").value, point = state.textPoint; if (!text.trim() || !point) return showToast("Enter some text first");
+		const before = snapshot(), context = activeLayer().canvas.getContext("2d"), size = Math.max(6, +$("textSize").value), weight = $("textBold").checked ? "700" : "400", style = $("textItalic").checked ? "italic" : "normal";
+		context.save(); clipSelection(context); context.fillStyle = state.colour; context.font = `${style} ${weight} ${size}px ${$("textFont").value}`; context.textBaseline = "top"; context.textAlign = $("textAlign").value;
+		text.split("\n").forEach((line, index) => context.fillText(line, point.x, point.y + index * size * 1.25)); context.restore(); pushHistory(before); $("textDialog").close(); state.textPoint = null; render();
 	}
 
-	function selectTool(tool) {
-		if (state.tool !== tool && activeAsset()?.selection) { activeAsset().selection = null; drawSelection(); }
+	function selectTool(tool, preserveSelection = false) {
+		if (state.tool !== tool && activeAsset()?.selection && !preserveSelection) { activeAsset().selection = null; drawSelection(); }
 		state.tool = tool; document.querySelectorAll(".paint-tool").forEach(button => button.classList.toggle("active", button.dataset.tool === tool));
-		const names = {select: "Rectangle select", lasso: "Lasso select", eyedropper: "Eyedropper", fill: "Flood fill", pencil: "Pencil", brush: "Brush", eraser: "Eraser", line: "Line", rectangle: "Rectangle", ellipse: "Ellipse", text: "Text"};
-		$("activeToolName").textContent = names[tool]; interactionCanvas.style.cursor = tool === "fill" ? "cell" : tool === "text" ? "text" : "crosshair";
+		const names = {move: "Move layer", select: "Rectangle select", lasso: "Lasso select", eyedropper: "Eyedropper", fill: "Flood fill", pencil: "Pencil", brush: "Brush", eraser: "Eraser", line: "Line", rectangle: "Rectangle", ellipse: "Ellipse", text: "Text"};
+		$("activeToolName").textContent = names[tool]; interactionCanvas.style.cursor = tool === "move" ? "move" : tool === "fill" ? "cell" : tool === "text" ? "text" : "crosshair"; updateActionAvailability();
 	}
 	function pointerPosition(event) { const rect = interactionCanvas.getBoundingClientRect(); return {x: (event.clientX - rect.left) * interactionCanvas.width / rect.width, y: (event.clientY - rect.top) * interactionCanvas.height / rect.height}; }
+	function shiftActiveLayer(dx, dy) {
+		if (!dx && !dy) return; const layer = activeLayer(), copy = makeCanvas(layer.canvas.width, layer.canvas.height); copy.getContext("2d").drawImage(layer.canvas, 0, 0);
+		const context = layer.canvas.getContext("2d"); context.clearRect(0, 0, layer.canvas.width, layer.canvas.height); context.drawImage(copy, Math.round(dx), Math.round(dy));
+		if (activeAsset().selection) activeAsset().selection.points.forEach(point => { point.x += dx; point.y += dy; });
+	}
 	function pointerDown(event) {
 		if (!activeAsset() || event.button !== 0) return; event.preventDefault(); interactionCanvas.setPointerCapture(event.pointerId);
 		const local = pointerPosition(event), point = canvasToSource(local.x, local.y), before = snapshot();
 		if (state.tool === "eyedropper") { const pixel = canvas.getContext("2d").getImageData(Math.max(0, Math.min(canvas.width - 1, local.x)), Math.max(0, Math.min(canvas.height - 1, local.y)), 1, 1).data; setColour("#" + [...pixel.slice(0, 3)].map(v => v.toString(16).padStart(2, "0")).join("")); return showToast("Colour sampled"); }
 		if (state.tool === "fill") { floodFill(point); pushHistory(before); return render(); }
-		if (state.tool === "text") return insertText(point);
+		if (state.tool === "text") return openTextDialog(point);
 		state.gesture = {before, start: point, last: point, points: [point]};
 		if (["pencil", "brush", "eraser"].includes(state.tool)) paintLine(point, point);
 	}
 	function pointerMove(event) {
 		if (!state.gesture) return; const local = pointerPosition(event), point = canvasToSource(local.x, local.y), gesture = state.gesture;
-		if (["pencil", "brush", "eraser"].includes(state.tool)) { paintLine(gesture.last, point); gesture.last = point; render(); }
+		if (state.tool === "move") { shiftActiveLayer(point.x - gesture.last.x, point.y - gesture.last.y); gesture.last = point; render(); }
+		else if (["pencil", "brush", "eraser"].includes(state.tool)) { paintLine(gesture.last, point); gesture.last = point; render(); }
 		else if (state.tool === "select") drawSelection({type: "rect", points: [gesture.start, point]});
 		else if (state.tool === "lasso") { gesture.points.push(point); drawSelection({type: "lasso", points: gesture.points}); }
 		else drawShapePreview(state.tool, gesture.start, point);
@@ -237,12 +268,13 @@
 	async function copySelection(cut = false) {
 		const asset = activeAsset(); if (!asset?.selection) return showToast("Make a selection first"); const bounds = selectionBounds(), source = compositeSource(), clip = makeCanvas(Math.ceil(bounds.width), Math.ceil(bounds.height)), context = clip.getContext("2d");
 		context.save(); context.translate(-bounds.x, -bounds.y); selectionPath(context); context.clip(); context.drawImage(source, 0, 0); context.restore(); state.clipboard = {canvas: clip, x: bounds.x, y: bounds.y};
+		updateActionAvailability();
 		try { const blob = await new Promise(resolve => clip.toBlob(resolve, "image/png")); if (blob && navigator.clipboard?.write && window.ClipboardItem) await navigator.clipboard.write([new ClipboardItem({"image/png": blob})]); } catch {}
 		if (cut) clearPixels(); else showToast("Selection copied");
 	}
 	function pasteCanvas(source, x, y, name = "Pasted selection") {
 		const asset = activeAsset(), before = snapshot(), layerCanvas = makeCanvas(asset.width, asset.height); layerCanvas.getContext("2d").drawImage(source, Math.round(x), Math.round(y));
-		asset.layers.push({name, canvas: layerCanvas, visible: true, opacity: 1}); asset.activeLayer = asset.layers.length - 1; asset.selection = {type: "rect", points: [{x, y}, {x: x + source.width, y: y + source.height}]}; pushHistory(before); syncControls(); render(); showToast("Pasted as new layer");
+		asset.layers.push({name, canvas: layerCanvas, visible: true, opacity: 1}); asset.activeLayer = asset.layers.length - 1; asset.selection = {type: "rect", points: [{x, y}, {x: x + source.width, y: y + source.height}]}; pushHistory(before); selectTool("move", true); syncControls(); render(); showToast("Pasted as new movable layer");
 	}
 	async function pasteSelection() {
 		if (state.clipboard) return pasteCanvas(state.clipboard.canvas, state.clipboard.x + 10, state.clipboard.y + 10);
@@ -254,7 +286,10 @@
 
 	function renderLayers() {
 		const asset = activeAsset(); if (!asset) return; $("layersList").replaceChildren(...asset.layers.map((layer, index) => {
-			const row = document.createElement("div"); row.className = "layer-row" + (index === asset.activeLayer ? " active" : "");
+			const row = document.createElement("div"); row.className = "layer-row" + (index === asset.activeLayer ? " active" : ""); row.draggable = true;
+			row.addEventListener("dragstart", event => { event.dataTransfer.setData("text/plain", String(index)); event.dataTransfer.effectAllowed = "move"; row.classList.add("dragging"); });
+			row.addEventListener("dragend", () => row.classList.remove("dragging")); row.addEventListener("dragover", event => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; row.classList.add("drag-over"); });
+			row.addEventListener("dragleave", () => row.classList.remove("drag-over")); row.addEventListener("drop", event => { event.preventDefault(); row.classList.remove("drag-over"); const from = Number(event.dataTransfer.getData("text/plain")); if (!Number.isInteger(from) || from === index) return; mutate(current => { const [moved] = current.layers.splice(from, 1); current.layers.splice(index, 0, moved); current.activeLayer = index; }); });
 			const visible = document.createElement("button"); visible.type = "button"; visible.className = "layer-visible"; visible.textContent = layer.visible ? "●" : "○"; visible.title = layer.visible ? "Hide layer" : "Show layer";
 			visible.addEventListener("click", event => { event.stopPropagation(); mutate(current => current.layers[index].visible = !current.layers[index].visible); });
 			const name = document.createElement("span"); name.textContent = layer.name;
@@ -294,6 +329,11 @@
 		document.querySelectorAll(".tab").forEach(button => { const active = button.dataset.tab === tab; button.classList.toggle("active", active); button.setAttribute("aria-selected", active); });
 		["edit", "layers", "export"].forEach(name => $(name + "Panel").hidden = name !== tab);
 	}
+	const imageSections = {transform: $("transformSection"), crop: $("cropSection"), adjust: $("adjustSection")};
+	function openImageDialog(kind) {
+		const titles = {transform: "Transform image", crop: "Crop image", adjust: "Adjust image"}; $("imageDialogTitle").textContent = titles[kind]; $("imageDialogBody").replaceChildren(imageSections[kind]); $("imageDialog").showModal();
+	}
+	function closeMenus() { document.querySelectorAll(".app-menu").forEach(menu => menu.classList.remove("show")); }
 	["emptyOpenButton", "addButton"].forEach(id => $(id).addEventListener("click", () => $("fileInput").click()));
 	$("fileInput").addEventListener("change", event => { loadFiles(event.target.files); event.target.value = ""; });
 	document.addEventListener("paste", event => { const files = [...event.clipboardData.items].filter(item => item.kind === "file").map(item => item.getAsFile()); if (!files.length) return; event.preventDefault(); if (!activeAsset()) loadFiles(files); else decodeFile(files[0]).then(({image, url}) => { pasteCanvas(image, activeAsset().edit.crop.x, activeAsset().edit.crop.y, "Pasted image"); URL.revokeObjectURL(url); }); });
@@ -303,6 +343,13 @@
 	document.querySelectorAll(".left-tab").forEach(button => button.addEventListener("click", () => { document.querySelectorAll(".left-tab").forEach(tab => { const active = tab === button; tab.classList.toggle("active", active); tab.setAttribute("aria-selected", active); }); $("toolsPanel").hidden = button.dataset.leftTab !== "tools"; $("imagesPanel").hidden = button.dataset.leftTab !== "images"; }));
 	document.querySelectorAll(".paint-tool").forEach(button => button.addEventListener("click", () => selectTool(button.dataset.tool)));
 	document.querySelectorAll(".tab").forEach(button => button.addEventListener("click", () => showTab(button.dataset.tab)));
+	document.querySelectorAll(".menu-trigger").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); const menu = $(button.dataset.menu), opening = !menu.classList.contains("show"); closeMenus(); if (opening) { const rect = button.getBoundingClientRect(); menu.style.left = rect.left + "px"; menu.style.top = rect.bottom + "px"; menu.classList.add("show"); } }));
+	document.addEventListener("click", event => { if (!event.target.closest(".app-menu,.menu-trigger")) closeMenus(); });
+	document.querySelectorAll(".app-menu [data-action]").forEach(button => button.addEventListener("click", () => {
+		closeMenus(); const action = button.dataset.action;
+		if (action === "open") $("fileInput").click(); if (action === "export") showTab("export"); if (action === "undo") undo(); if (action === "redo") redo(); if (action === "copy") copySelection(); if (action === "cut") copySelection(true); if (action === "paste") pasteSelection(); if (["transform", "crop", "adjust"].includes(action)) openImageDialog(action);
+	}));
+	document.querySelectorAll("[data-close]").forEach(button => button.addEventListener("click", () => $(button.dataset.close).close()));
 	interactionCanvas.addEventListener("pointerdown", pointerDown); interactionCanvas.addEventListener("pointermove", pointerMove); interactionCanvas.addEventListener("pointerup", pointerUp); interactionCanvas.addEventListener("pointercancel", pointerUp);
 	interactionCanvas.addEventListener("contextmenu", event => { event.preventDefault(); $("contextMenu").style.left = event.clientX + "px"; $("contextMenu").style.top = event.clientY + "px"; $("contextMenu").classList.add("show"); });
 	document.addEventListener("pointerdown", event => { if (!event.target.closest("#contextMenu")) $("contextMenu").classList.remove("show"); });
@@ -319,7 +366,10 @@
 	adjustmentIds.forEach(id => { let before; const remember = () => { if (!before) before = snapshot(); }; $(id).addEventListener("pointerdown", () => before = snapshot()); $(id).addEventListener("keydown", remember); $(id).addEventListener("input", () => { remember(); activeAsset().edit[id] = +$(id).value; $(id + "Value").value = $(id).value; render(); }); $(id).addEventListener("change", () => { pushHistory(before); before = null; syncControls(); }); });
 	$("resetAdjustments").addEventListener("click", () => mutate(asset => adjustmentIds.forEach(id => asset.edit[id] = 0)));
 	$("fillTolerance").addEventListener("input", () => $("toleranceValue").value = $("fillTolerance").value);
-	$("colourSwatch").addEventListener("click", () => { $("colorText").focus(); $("colorText").select(); }); $("colorText").addEventListener("change", () => { if (!setColour($("colorText").value, true)) showToast("Enter a valid CSS colour"); });
+	$("colourSwatch").addEventListener("click", openColourDialog); $("hueRange").addEventListener("input", () => { state.hue = +$("hueRange").value; drawColourField(); }); $("colourField").addEventListener("pointerdown", sampleColourField); $("colourField").addEventListener("pointermove", event => { if (event.buttons === 1) sampleColourField(event); });
+	$("applyColour").addEventListener("click", () => { if (!setColour($("colorText").value, true)) return showToast("Enter a valid CSS colour"); $("colourDialog").close(); }); $("colorText").addEventListener("change", () => { const parsed = parseColour($("colorText").value); if (!parsed) $("colorText").setAttribute("aria-invalid", "true"); else { $("colorText").removeAttribute("aria-invalid"); $("colourSwatch").style.background = parsed.css; } });
+	$("colourDialog").addEventListener("close", () => $("colourSwatch").style.background = state.colour);
+	$("applyText").addEventListener("click", applyText);
 	$("addLayer").addEventListener("click", () => addLayer()); $("duplicateLayer").addEventListener("click", duplicateLayer); $("deleteLayer").addEventListener("click", () => { if (activeAsset().layers.length === 1) return showToast("An image needs at least one layer"); mutate(asset => { asset.layers.splice(asset.activeLayer, 1); asset.activeLayer = Math.max(0, asset.activeLayer - 1); }); });
 	$("layerUp").addEventListener("click", () => moveLayer(1)); $("layerDown").addEventListener("click", () => moveLayer(-1)); let layerBefore;
 	$("layerOpacity").addEventListener("pointerdown", () => layerBefore = snapshot()); $("layerOpacity").addEventListener("input", () => { activeLayer().opacity = +$("layerOpacity").value / 100; $("layerOpacityValue").value = $("layerOpacity").value; renderLayers(); render(); }); $("layerOpacity").addEventListener("change", () => { pushHistory(layerBefore); layerBefore = null; });
@@ -329,8 +379,9 @@
 	$("exportName").addEventListener("input", updateMarkup); document.querySelectorAll("[name=variant]").forEach(input => input.addEventListener("change", updateMarkup)); $("exportButton").addEventListener("click", exportImage); $("variantsButton").addEventListener("click", exportVariants);
 	$("copyMarkup").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("markupOutput").value); showToast("Markup copied"); } catch { $("markupOutput").select(); document.execCommand("copy"); showToast("Markup copied"); } });
 	document.addEventListener("keydown", event => {
-		if (!activeAsset() || ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)) return; const key = event.key.toLowerCase(), modifier = event.ctrlKey || event.metaKey;
-		if (modifier && key === "z") { event.preventDefault(); event.shiftKey ? redo() : undo(); } else if (modifier && key === "y") { event.preventDefault(); redo(); } else if (modifier && key === "c") { event.preventDefault(); copySelection(); } else if (modifier && key === "x") { event.preventDefault(); copySelection(true); } else if (modifier && key === "v") { event.preventDefault(); pasteSelection(); } else if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); clearPixels(); } else if (event.key === "Escape") { activeAsset().selection = null; render(); }
+		if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)) return; const key = event.key.toLowerCase(), modifier = event.ctrlKey || event.metaKey;
+		if (modifier && key === "o") { event.preventDefault(); return $("fileInput").click(); } if (!activeAsset()) return;
+		if (modifier && key === "z") { event.preventDefault(); event.shiftKey ? redo() : undo(); } else if (modifier && key === "y") { event.preventDefault(); redo(); } else if (modifier && key === "c") { event.preventDefault(); copySelection(); } else if (modifier && key === "x") { event.preventDefault(); copySelection(true); } else if (modifier && key === "v") { event.preventDefault(); pasteSelection(); } else if (modifier && key === "e") { event.preventDefault(); showTab("export"); } else if (state.tool === "move" && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) { event.preventDefault(); const before = snapshot(), amount = event.shiftKey ? 10 : 1; shiftActiveLayer(event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0, event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0); pushHistory(before); render(); } else if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); clearPixels(); } else if (event.key === "Escape") { activeAsset().selection = null; render(); }
 	});
 	window.addEventListener("resize", () => { if (activeAsset() && !state.zoom) render(); });
 	renderPalette(); setColour(colours[0]);
