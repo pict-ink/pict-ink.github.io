@@ -1,10 +1,34 @@
 <a class="skip-link" href="#workspace">Skip to editor</a>
-<header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">L</span><span>Lumen</span></div></header>
+<header class="topbar">
+	<div class="brand"><span class="brand-mark" aria-hidden="true">P</span><span>Pict</span></div>
+	<nav class="menu-bar" aria-label="Application menu">
+		<button class="menu-trigger" data-menu="fileMenu" type="button">File</button>
+		<button class="menu-trigger" data-menu="editMenu" type="button">Edit</button>
+		<button class="menu-trigger" data-menu="imageMenu" type="button">Image</button>
+	</nav>
+</header>
+<svg class="icon-defs" aria-hidden="true">
+	<symbol id="i-move" viewBox="0 0 24 24"><path d="M12 2v20M2 12h20M12 2l-3 3m3-3 3 3M22 12l-3-3m3 3-3 3M12 22l-3-3m3 3 3-3M2 12l3-3m-3 3 3 3"/></symbol>
+	<symbol id="i-select" viewBox="0 0 24 24"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><path d="M10 4h4M20 10v4M14 20h-4M4 14v-4"/></symbol>
+	<symbol id="i-lasso" viewBox="0 0 24 24"><path d="M19 7c3 4-1 9-7 9S2 13 4 9s9-6 15-2Z"/><path d="M12 16c2 1 2 5-1 5-2 0-3-2-1-3"/></symbol>
+	<symbol id="i-dropper" viewBox="0 0 24 24"><path d="m14 4 6 6M17 7 8 16l-4 1 1-4 9-9M7 17l-2 2"/></symbol>
+	<symbol id="i-fill" viewBox="0 0 24 24"><path d="m4 13 8-8 7 7-8 8H4v-7Z"/><path d="M15 17c0 3 2 4 3 4s3-1 3-4l-3-4-3 4Z"/></symbol>
+	<symbol id="i-pencil" viewBox="0 0 24 24"><path d="m4 20 4-1 11-11-3-3L5 16l-1 4Z"/><path d="m14 7 3 3M5 16l3 3"/></symbol>
+	<symbol id="i-brush" viewBox="0 0 24 24"><path d="M14 14 21 5l-2-2-9 7"/><path d="M14 14c0 5-3 7-8 7 2-2-1-3 1-6 2-3 5-3 7-1Z"/></symbol>
+	<symbol id="i-eraser" viewBox="0 0 24 24"><path d="m4 15 9-10 7 6-8 9H7l-3-3v-2Z"/><path d="m9 10 7 6M12 20h9"/></symbol>
+	<symbol id="i-line" viewBox="0 0 24 24"><path d="M4 20 20 4"/></symbol>
+	<symbol id="i-rect" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1"/></symbol>
+	<symbol id="i-ellipse" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9" ry="7"/></symbol>
+	<symbol id="i-text" viewBox="0 0 24 24"><path d="M5 5h14M12 5v14M8 19h8"/></symbol>
+	<symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="1"/><path d="M16 8V4H4v12h4"/></symbol>
+	<symbol id="i-cut" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8 8 11 11M8 16 19 5"/></symbol>
+	<symbol id="i-paste" viewBox="0 0 24 24"><path d="M9 5H6v16h13V5h-3"/><rect x="9" y="3" width="7" height="4" rx="1"/></symbol>
+</svg>
 <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/avif" multiple hidden>
 <main id="workspace" class="app-shell">
 	<section class="empty-state" id="emptyState">
 		<div class="empty-art" aria-hidden="true"><span></span></div>
-		<h1>Lumen</h1>
+		<h1>Pict</h1>
 		<button class="button primary large" id="emptyOpenButton" type="button">Choose an image</button>
 		<p class="drop-hint">or drop an image here / paste from the clipboard</p>
 		<div class="feature-row" aria-label="Key features"><span>Local processing</span><span>Responsive variants</span><span>PNG, JPEG &amp; WebP</span></div>
@@ -17,17 +41,18 @@
 			</div>
 			<div class="left-tab-panel" id="toolsPanel">
 				<div class="vertical-tools" role="toolbar" aria-label="Editing tools">
-					<button class="paint-tool active" data-tool="select" type="button"><span>□</span>Select</button>
-					<button class="paint-tool" data-tool="lasso" type="button"><span>⌁</span>Lasso</button>
-					<button class="paint-tool" data-tool="eyedropper" type="button"><span>◉</span>Pick</button>
-					<button class="paint-tool" data-tool="fill" type="button"><span>▰</span>Fill</button>
-					<button class="paint-tool" data-tool="pencil" type="button"><span>╱</span>Pencil</button>
-					<button class="paint-tool" data-tool="brush" type="button"><span>●</span>Brush</button>
-					<button class="paint-tool" data-tool="eraser" type="button"><span>◇</span>Eraser</button>
-					<button class="paint-tool" data-tool="line" type="button"><span>╱</span>Line</button>
-					<button class="paint-tool" data-tool="rectangle" type="button"><span>▭</span>Rectangle</button>
-					<button class="paint-tool" data-tool="ellipse" type="button"><span>○</span>Ellipse</button>
-					<button class="paint-tool" data-tool="text" type="button"><span>T</span>Text</button>
+					<button class="paint-tool" data-tool="move" type="button"><svg><use href="#i-move"/></svg>Move</button>
+					<button class="paint-tool active" data-tool="select" type="button"><svg><use href="#i-select"/></svg>Select</button>
+					<button class="paint-tool" data-tool="lasso" type="button"><svg><use href="#i-lasso"/></svg>Lasso</button>
+					<button class="paint-tool" data-tool="eyedropper" type="button"><svg><use href="#i-dropper"/></svg>Pick</button>
+					<button class="paint-tool" data-tool="fill" type="button"><svg><use href="#i-fill"/></svg>Fill</button>
+					<button class="paint-tool" data-tool="pencil" type="button"><svg><use href="#i-pencil"/></svg>Pencil</button>
+					<button class="paint-tool" data-tool="brush" type="button"><svg><use href="#i-brush"/></svg>Brush</button>
+					<button class="paint-tool" data-tool="eraser" type="button"><svg><use href="#i-eraser"/></svg>Eraser</button>
+					<button class="paint-tool" data-tool="line" type="button"><svg><use href="#i-line"/></svg>Line</button>
+					<button class="paint-tool" data-tool="rectangle" type="button"><svg><use href="#i-rect"/></svg>Rectangle</button>
+					<button class="paint-tool" data-tool="ellipse" type="button"><svg><use href="#i-ellipse"/></svg>Ellipse</button>
+					<button class="paint-tool" data-tool="text" type="button"><svg><use href="#i-text"/></svg>Text</button>
 				</div>
 			</div>
 			<div class="left-tab-panel" id="imagesPanel" hidden>
@@ -38,39 +63,35 @@
 		<section class="canvas-area" aria-label="Image preview">
 			<div class="canvas-toolbar">
 				<div><button class="icon-button" id="undoButton" type="button" aria-label="Undo" disabled>↶</button><button class="icon-button" id="redoButton" type="button" aria-label="Redo" disabled>↷</button><button class="text-button" id="resetButton" type="button">Reset</button></div>
-				<div class="clipboard-actions"><button class="text-button" id="copyButton" type="button">Copy</button><button class="text-button" id="cutButton" type="button">Cut</button><button class="text-button" id="pasteButton" type="button">Paste</button></div>
+				<div class="clipboard-actions"><button class="icon-button clipboard-button" id="copyButton" type="button" aria-label="Copy selection" title="Copy (Ctrl+C)" hidden><svg><use href="#i-copy"/></svg></button><button class="icon-button clipboard-button" id="cutButton" type="button" aria-label="Cut selection" title="Cut (Ctrl+X)" hidden><svg><use href="#i-cut"/></svg></button><button class="icon-button clipboard-button" id="pasteButton" type="button" aria-label="Paste" title="Paste (Ctrl+V)" hidden><svg><use href="#i-paste"/></svg></button></div>
 				<div class="zoom-actions"><button class="icon-button" id="zoomOut" type="button" aria-label="Zoom out">−</button><output id="zoomOutput">Fit</output><button class="icon-button" id="zoomIn" type="button" aria-label="Zoom in">+</button></div>
 			</div>
 			<div class="canvas-stage" id="canvasStage"><div class="canvas-wrap" id="canvasWrap"><canvas id="previewCanvas"></canvas><canvas id="interactionCanvas"></canvas></div><div class="drop-overlay" id="dropOverlay">Drop images to add them</div></div>
 			<div class="image-status"><span id="sourceInfo"></span><span id="editedInfo"></span></div>
-			<div class="palette-bar" id="paletteBar" aria-label="Colour palette"></div>
+			<div class="palette-bar" aria-label="Colour palette"><button class="current-colour" id="colourSwatch" type="button" aria-label="Open colour picker" title="Choose colour"></button><div class="palette-grid" id="paletteBar"></div></div>
 		</section>
 		<aside class="controls-panel" aria-label="Editing controls">
 			<div class="control-tabs" role="tablist"><button class="tab active" data-tab="edit" type="button" role="tab" aria-selected="true">Edit</button><button class="tab" data-tab="layers" type="button" role="tab" aria-selected="false">Layers</button><button class="tab" data-tab="export" type="button" role="tab" aria-selected="false">Export</button></div>
 			<div class="tab-panel" id="editPanel">
 				<section class="control-section tool-options">
 					<div class="section-heading"><h3 id="activeToolName">Rectangle select</h3><button class="text-button" id="clearSelection" type="button">Clear selection</button></div>
-					<label>Colour</label>
-					<div class="colour-control"><button class="colour-swatch" id="colourSwatch" type="button" aria-label="Edit colour value"></button><input id="colorText" type="text" value="#f3a6b8" aria-label="Colour value" spellcheck="false"></div>
-					<p class="field-help">Hex, RGB, HSL or any CSS colour</p>
-					<div class="field-row"><label>Size<input id="toolSize" type="number" min="1" max="200" value="18"></label><label>Text size<input id="textSize" type="number" min="6" max="300" value="40"></label></div>
-					<label id="textValueLabel">Text<input id="textValue" type="text" value="Text"></label>
+					<label>Size<input id="toolSize" type="number" min="1" max="200" value="18"></label>
 					<label class="check-label"><input id="shapeFill" type="checkbox"> Fill shapes</label>
 					<label class="range-label"><span>Fill tolerance <output id="toleranceValue">24</output></span><input id="fillTolerance" type="range" min="0" max="100" value="24"></label>
 					<div class="selection-actions"><button class="button secondary" id="cropToSelection" type="button">Crop selection</button><button class="button secondary" id="deleteSelection" type="button">Delete selection</button></div>
 				</section>
-				<section class="control-section">
+				<section class="control-section image-control-section" id="transformSection">
 					<h3>Transform</h3>
 					<div class="tool-grid"><button class="tool-button" id="rotateLeft" type="button"><span>↶</span>Rotate left</button><button class="tool-button" id="rotateRight" type="button"><span>↷</span>Rotate right</button><button class="tool-button" id="flipHorizontal" type="button"><span>↔</span>Flip H</button><button class="tool-button" id="flipVertical" type="button"><span>↕</span>Flip V</button></div>
 				</section>
-				<section class="control-section">
+				<section class="control-section image-control-section" id="cropSection">
 					<div class="section-heading"><h3>Crop</h3><button class="text-button" id="resetCrop" type="button">Full image</button></div>
 					<label>Aspect ratio<select id="aspectRatio"><option value="free">Free</option><option value="1">Square · 1:1</option><option value="1.7777778">Landscape · 16:9</option><option value="1.5">Photo · 3:2</option><option value="0.8">Portrait · 4:5</option></select></label>
 					<div class="field-row"><label>X<input id="cropX" type="number" min="0"></label><label>Y<input id="cropY" type="number" min="0"></label></div>
 					<div class="field-row"><label>Width<input id="cropWidth" type="number" min="1"></label><label>Height<input id="cropHeight" type="number" min="1"></label></div>
 					<button class="button secondary full spaced-button" id="applyAspect" type="button">Apply ratio from centre</button>
 				</section>
-				<section class="control-section">
+				<section class="control-section image-control-section" id="adjustSection">
 					<div class="section-heading"><h3>Adjust</h3><button class="text-button" id="resetAdjustments" type="button">Reset</button></div>
 					<label class="range-label"><span>Brightness <output id="brightnessValue">0</output></span><input id="brightness" type="range" min="-100" max="100" value="0"></label>
 					<label class="range-label"><span>Contrast <output id="contrastValue">0</output></span><input id="contrast" type="range" min="-100" max="100" value="0"></label>
@@ -104,5 +125,28 @@
 		</aside>
 	</section>
 </main>
+<menu class="app-menu" id="fileMenu"><button data-action="open" type="button">Open image <span>Ctrl+O</span></button><button data-action="export" type="button">Export <span>Ctrl+E</span></button></menu>
+<menu class="app-menu" id="editMenu"><button data-action="undo" type="button">Undo <span>Ctrl+Z</span></button><button data-action="redo" type="button">Redo <span>Ctrl+Y</span></button><hr><button data-action="copy" type="button">Copy <span>Ctrl+C</span></button><button data-action="cut" type="button">Cut <span>Ctrl+X</span></button><button data-action="paste" type="button">Paste <span>Ctrl+V</span></button></menu>
+<menu class="app-menu" id="imageMenu"><button data-action="transform" type="button">Transform</button><button data-action="crop" type="button">Crop</button><button data-action="adjust" type="button">Adjustments</button></menu>
+<dialog class="modal" id="imageDialog"><div class="modal-heading"><h2 id="imageDialogTitle">Image</h2><button class="modal-close" data-close="imageDialog" type="button" aria-label="Close">×</button></div><div class="modal-body" id="imageDialogBody"></div></dialog>
+<dialog class="modal colour-dialog" id="colourDialog">
+	<div class="modal-heading"><h2>Choose colour</h2><button class="modal-close" data-close="colourDialog" type="button" aria-label="Close">×</button></div>
+	<div class="modal-body">
+		<canvas id="colourField" width="320" height="180" aria-label="Saturation and brightness"></canvas>
+		<label>Hue<input id="hueRange" type="range" min="0" max="359" value="345"></label>
+		<label>Colour value<input id="colorText" type="text" value="#f3a6b8" spellcheck="false"></label>
+		<p class="field-help">Hex, RGB, HSL or any CSS colour</p>
+		<div class="dialog-actions"><button class="button secondary" data-close="colourDialog" type="button">Cancel</button><button class="button primary" id="applyColour" type="button">Use colour</button></div>
+	</div>
+</dialog>
+<dialog class="modal text-dialog" id="textDialog">
+	<div class="modal-heading"><h2>Add text</h2><button class="modal-close" data-close="textDialog" type="button" aria-label="Close">×</button></div>
+	<div class="modal-body">
+		<label>Text<textarea id="textValue" rows="4" placeholder="Enter text"></textarea></label>
+		<div class="field-row"><label>Font<select id="textFont"><option value="system-ui, sans-serif">System sans</option><option value="Georgia, serif">Georgia</option><option value="'Courier New', monospace">Monospace</option><option value="Arial, sans-serif">Arial</option><option value="'Trebuchet MS', sans-serif">Trebuchet</option><option value="'Times New Roman', serif">Times</option></select></label><label>Size<input id="textSize" type="number" min="6" max="300" value="40"></label></div>
+		<div class="text-options"><label class="check-label"><input id="textBold" type="checkbox"> Bold</label><label class="check-label"><input id="textItalic" type="checkbox"> Italic</label><label>Align<select id="textAlign"><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label></div>
+		<div class="dialog-actions"><button class="button secondary" data-close="textDialog" type="button">Cancel</button><button class="button primary" id="applyText" type="button">Add text</button></div>
+	</div>
+</dialog>
 <menu class="context-menu" id="contextMenu"><button data-command="copy" type="button">Copy <span>Ctrl+C</span></button><button data-command="cut" type="button">Cut <span>Ctrl+X</span></button><button data-command="paste" type="button">Paste <span>Ctrl+V</span></button><hr><button data-command="delete" type="button">Delete selection <span>Delete</span></button><button data-command="clear" type="button">Clear selection <span>Esc</span></button></menu>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
