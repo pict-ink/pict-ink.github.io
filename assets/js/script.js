@@ -452,7 +452,8 @@
 	function openImageDialog(kind) {
 		const titles = {transform: "Transform image", crop: "Crop image", adjust: "Adjust image"}; $("imageDialogTitle").textContent = titles[kind]; $("imageDialogBody").replaceChildren(imageSections[kind]); $("imageDialog").showModal();
 	}
-	function closeMenus() { document.querySelectorAll(".app-menu").forEach(menu => menu.classList.remove("show")); }
+	function closeMenus() { document.querySelectorAll(".app-menu").forEach(menu => menu.classList.remove("show")); document.querySelectorAll(".menu-trigger").forEach(button => button.setAttribute("aria-expanded", "false")); }
+	function showMenu(button) { const menu = $(button.dataset.menu), rect = button.getBoundingClientRect(); closeMenus(); menu.style.left = rect.left + "px"; menu.style.top = rect.bottom + "px"; menu.classList.add("show"); button.setAttribute("aria-expanded", "true"); }
 	function nudgeVector(key, amount) { return {x: key === "ArrowLeft" ? -amount : key === "ArrowRight" ? amount : 0, y: key === "ArrowUp" ? -amount : key === "ArrowDown" ? amount : 0}; }
 	function nudgeFrame(time) {
 		const nudge = state.nudge; if (!nudge) return; const held = time - nudge.started, elapsed = time - nudge.last; nudge.last = time;
@@ -476,7 +477,10 @@
 	document.querySelectorAll(".left-tab").forEach(button => button.addEventListener("click", () => { document.querySelectorAll(".left-tab").forEach(tab => { const active = tab === button; tab.classList.toggle("active", active); tab.setAttribute("aria-selected", active); }); $("toolsPanel").hidden = button.dataset.leftTab !== "tools"; $("imagesPanel").hidden = button.dataset.leftTab !== "images"; }));
 	document.querySelectorAll(".paint-tool").forEach(button => button.addEventListener("click", () => selectTool(button.dataset.tool)));
 	document.querySelectorAll(".tab").forEach(button => button.addEventListener("click", () => showTab(button.dataset.tab)));
-	document.querySelectorAll(".menu-trigger").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); const menu = $(button.dataset.menu), opening = !menu.classList.contains("show"); closeMenus(); if (opening) { const rect = button.getBoundingClientRect(); menu.style.left = rect.left + "px"; menu.style.top = rect.bottom + "px"; menu.classList.add("show"); } }));
+	document.querySelectorAll(".menu-trigger").forEach(button => {
+		button.addEventListener("click", event => { event.stopPropagation(); const opening = !$(button.dataset.menu).classList.contains("show"); closeMenus(); if (opening) showMenu(button); });
+		button.addEventListener("pointerenter", () => { if (document.querySelector(".app-menu.show") && !$(button.dataset.menu).classList.contains("show")) showMenu(button); });
+	});
 	document.addEventListener("click", event => { if (!event.target.closest(".app-menu,.menu-trigger")) closeMenus(); });
 	document.querySelectorAll(".app-menu [data-action]").forEach(button => button.addEventListener("click", () => {
 		closeMenus(); const action = button.dataset.action;
