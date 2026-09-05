@@ -6,7 +6,7 @@
 	const adjustmentIds = ["brightness", "contrast", "saturation", "warmth", "blur"];
 	const extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"};
 	const colours = ["#f3a6b8", "#ffb38a", "#f6d77d", "#b9e18f", "#80d7bd", "#83cbea", "#aaa7ed", "#d6a0df", "#a92f53", "#b94d22", "#a17a08", "#39752d", "#087363", "#176386", "#50439a", "#792f85"];
-	const state = {assets: [], active: -1, zoom: 0, history: [], future: [], tool: "select", gesture: null, clipboard: null, colour: colours[0], restoring: false, textPoint: null, hue: 345, nudge: null, cloneSource: null, grid: false, draftTimer: null};
+	const state = {assets: [], active: -1, zoom: 0, history: [], future: [], tool: "select", gesture: null, clipboard: null, colour: colours[0], restoring: false, textPoint: null, hue: 345, nudge: null, cloneSource: null, grid: false, draftTimer: null, hueAdjustment: null, hueFrame: 0};
 	let toastTimer;
 
 	const makeCanvas = (width, height) => { const result = document.createElement("canvas"); result.width = width; result.height = height; return result; };
@@ -17,6 +17,7 @@
 	const cleanName = name => name.replace(/\.[^.]+$/, "").replace(/[^a-z0-9_-]+/gi, "-").replace(/^-|-$/g, "") || "image";
 	const formatBytes = bytes => bytes < 1024 ? bytes + " B" : bytes < 1048576 ? (bytes / 1024).toFixed(1) + " KB" : (bytes / 1048576).toFixed(1) + " MB";
 	const showToast = message => { $("toast").textContent = message; $("toast").classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("show"), 2200); };
+	function showEditor() { $("topbar").hidden = false; document.body.classList.remove("empty-mode"); $("emptyState").hidden = true; $("editor").hidden = false; }
 
 	function snapshot() {
 		const asset = activeAsset();
@@ -48,6 +49,7 @@
 	function updateHistoryButtons() { $("undoButton").disabled = !state.history.length || state.restoring; $("redoButton").disabled = !state.future.length || state.restoring; renderHistory(); }
 	function updateActionAvailability() {
 		const selected = Boolean(activeAsset()?.selection), pasteable = Boolean(state.clipboard);
+		$("selectionHueControl").hidden = !selected;
 		document.querySelectorAll('[data-command="copy"],[data-command="cut"]').forEach(button => button.hidden = !selected);
 		document.querySelectorAll('[data-command="paste"]').forEach(button => button.hidden = !pasteable);
 		document.querySelectorAll('[data-command="delete"],[data-command="clear"]').forEach(button => button.hidden = !selected);
@@ -78,7 +80,7 @@
 				state.assets.push({file, image, url, width: image.naturalWidth, height: image.naturalHeight, edit: defaultEdit(image), selection: null, activeLayer: 0, layers: [{name: "Background", canvas: base, visible: true, opacity: 1, blend: "source-over"}]});
 			} catch { showToast("Could not open " + file.name); }
 		}
-		if (state.active < 0 && state.assets.length) { $("emptyState").hidden = true; $("editor").hidden = false; selectAsset(0); }
+		if (state.active < 0 && state.assets.length) { showEditor(); selectAsset(0); }
 		else renderAssets();
 	}
 	function renderAssets() {
@@ -192,6 +194,38 @@
 	function selectionMask(selection = activeAsset().selection, feather = +$("selectionFeather").value) {
 		const asset = activeAsset(), base = makeCanvas(asset.width, asset.height), context = base.getContext("2d"); context.fillStyle = "#fff"; if (selectionPath(context, selection)) context.fill(); if (!feather) return base;
 		const softened = makeCanvas(asset.width, asset.height), soft = softened.getContext("2d"); soft.filter = `blur(${Math.min(50, feather)}px)`; soft.drawImage(base, 0, 0); return softened;
+	}
+	function hueShiftPixel(data, index, degrees, strength) {
+		let r = data[index] / 255, g = data[index + 1] / 255, b = data[index + 2] / 255;
+		const maximum = Math.max(r, g, b), minimum = Math.min(r, g, b), lightness = (maximum + minimum) / 2, range = maximum - minimum;
+		if (!range) return;
+		const saturation = range / (1 - Math.abs(2 * lightness - 1));
+		let hue = maximum === r ? ((g - b) / range) % 6 : maximum === g ? (b - r) / range + 2 : (r - g) / range + 4;
+		hue = ((hue * 60 + degrees) % 360 + 360) % 360;
+		const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation, x = chroma * (1 - Math.abs((hue / 60) % 2 - 1)), offset = lightness - chroma / 2;
+		const shifted = hue < 60 ? [chroma, x, 0] : hue < 120 ? [x, chroma, 0] : hue < 180 ? [0, chroma, x] : hue < 240 ? [0, x, chroma] : hue < 300 ? [x, 0, chroma] : [chroma, 0, x];
+		data[index] += ((shifted[0] + offset) * 255 - data[index]) * strength;
+		data[index + 1] += ((shifted[1] + offset) * 255 - data[index + 1]) * strength;
+		data[index + 2] += ((shifted[2] + offset) * 255 - data[index + 2]) * strength;
+	}
+	function beginHueAdjustment() {
+		if (state.hueAdjustment || !activeAsset()?.selection) return;
+		const asset = activeAsset(), layer = activeLayer(), offsetX = Math.round(layer.offsetX || 0), offsetY = Math.round(layer.offsetY || 0), bounds = selectionBounds(), feather = Math.ceil(+$("selectionFeather").value * 2);
+		const globalX = Math.max(0, Math.floor(bounds.x) - feather, offsetX), globalY = Math.max(0, Math.floor(bounds.y) - feather, offsetY), right = Math.min(asset.width, Math.ceil(bounds.x + bounds.width) + feather, offsetX + layer.canvas.width), bottom = Math.min(asset.height, Math.ceil(bounds.y + bounds.height) + feather, offsetY + layer.canvas.height);
+		if (right <= globalX || bottom <= globalY) return;
+		const width = right - globalX, height = bottom - globalY, localX = globalX - offsetX, localY = globalY - offsetY, context = layer.canvas.getContext("2d"), mask = selectionMask();
+		state.hueAdjustment = {before: snapshot(), context, localX, localY, width, height, source: context.getImageData(localX, localY, width, height), mask: mask.getContext("2d").getImageData(globalX, globalY, width, height).data};
+	}
+	function previewHueAdjustment() {
+		const adjustment = state.hueAdjustment; if (!adjustment) return;
+		const degrees = +$("selectionHue").value, image = adjustment.context.createImageData(adjustment.width, adjustment.height), data = image.data; data.set(adjustment.source.data);
+		for (let index = 0; index < data.length; index += 4) { const strength = adjustment.mask[index + 3] / 255; if (strength) hueShiftPixel(data, index, degrees, strength); }
+		adjustment.context.putImageData(image, adjustment.localX, adjustment.localY); render();
+	}
+	function scheduleHuePreview() { cancelAnimationFrame(state.hueFrame); state.hueFrame = requestAnimationFrame(previewHueAdjustment); }
+	function finishHueAdjustment() {
+		if (!state.hueAdjustment) return; cancelAnimationFrame(state.hueFrame); previewHueAdjustment(); const before = state.hueAdjustment.before, changed = +$("selectionHue").value !== 0; state.hueAdjustment = null;
+		if (changed) pushHistory(before, "Adjust selection hue"); $("selectionHue").value = 0; $("selectionHueValue").value = 0; if (changed) { syncControls(); render(); }
 	}
 	function maskToSelection(mask) {
 		const {width, height} = mask, alpha = mask.getContext("2d").getImageData(0, 0, width, height).data, spans = []; for (let y = 0; y < height; y++) for (let x = 0; x < width;) { while (x < width && alpha[(y * width + x) * 4 + 3] < 128) x++; const from = x; while (x < width && alpha[(y * width + x) * 4 + 3] >= 128) x++; if (x > from) spans.push({x: from, y, width: x - from}); } return spans.length ? {type: "magic", spans} : null;
@@ -423,7 +457,7 @@
 	function projectData() { return {format: "pict", version: 1, savedAt: new Date().toISOString(), active: state.active, assets: state.assets.map(asset => ({name: asset.file.name, type: asset.file.type, width: asset.width, height: asset.height, edit: asset.edit, selection: asset.selection, activeLayer: asset.activeLayer, layers: asset.layers.map(layer => ({name: layer.name, visible: layer.visible, opacity: layer.opacity, blend: layer.blend || "source-over", floating: Boolean(layer.floating), targetLayer: layer.targetLayer, offsetX: layer.offsetX || 0, offsetY: layer.offsetY || 0, data: layer.canvas.toDataURL("image/png")}))}))}; }
 	async function loadProject(data) {
 		if (data?.format !== "pict" || data.version !== 1 || !Array.isArray(data.assets)) throw new Error("Not a Pict project"); const assets = []; for (const saved of data.assets) { if (!saved.width || !saved.height || saved.width * saved.height > 40000000 || !Array.isArray(saved.layers) || !saved.layers.length || saved.width * saved.height * saved.layers.length > 96000000 || saved.layers.some(layer => typeof layer.data !== "string" || !layer.data.startsWith("data:image/png;base64,"))) throw new Error("Unsafe project dimensions"); const layers = await Promise.all(saved.layers.map(async layer => ({...layer, canvas: await canvasFromURL(layer.data, saved.width, saved.height)}))), composite = makeCanvas(saved.width, saved.height), compositeContext = composite.getContext("2d"); for (const layer of layers) if (layer.visible) { compositeContext.globalAlpha = layer.opacity; compositeContext.globalCompositeOperation = layer.blend || "source-over"; compositeContext.drawImage(layer.canvas, layer.offsetX || 0, layer.offsetY || 0); } const url = composite.toDataURL("image/png"), image = new Image(); image.src = url; await image.decode(); const file = new File([], saved.name || "project-image.png", {type: saved.type || "image/png"}); assets.push({file, image, url, width: saved.width, height: saved.height, edit: saved.edit, selection: saved.selection || null, activeLayer: Math.min(saved.activeLayer || 0, layers.length - 1), layers}); }
-		state.assets.forEach(asset => { if (asset.url.startsWith("blob:")) URL.revokeObjectURL(asset.url); }); state.assets = assets; state.active = Math.max(0, Math.min(data.active || 0, assets.length - 1)); state.history = []; state.future = []; $("emptyState").hidden = Boolean(assets.length); $("editor").hidden = !assets.length; if (assets.length) selectAsset(state.active); showToast("Pict project opened");
+		state.assets.forEach(asset => { if (asset.url.startsWith("blob:")) URL.revokeObjectURL(asset.url); }); state.assets = assets; state.active = Math.max(0, Math.min(data.active || 0, assets.length - 1)); state.history = []; state.future = []; if (assets.length) { showEditor(); selectAsset(state.active); } showToast("Pict project opened");
 	}
 	function saveProject() { if (!state.assets.length) return; const blob = new Blob([JSON.stringify(projectData())], {type: "application/json"}); download(blob, cleanName(activeAsset().file.name) + ".pict"); showToast("Pict project saved"); }
 	function openDraftDatabase() { return new Promise((resolve, reject) => { const request = indexedDB.open("pict", 1); request.onupgradeneeded = () => request.result.createObjectStore("drafts"); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); }
@@ -516,6 +550,7 @@
 	$("fillTolerance").addEventListener("input", () => $("toleranceValue").value = $("fillTolerance").value);
 	$("toolOpacity").addEventListener("input", () => $("toolOpacityValue").value = $("toolOpacity").value);
 	$("brushHardness").addEventListener("input", () => $("brushHardnessValue").value = $("brushHardness").value); $("brushSpacing").addEventListener("input", () => $("brushSpacingValue").value = $("brushSpacing").value); $("selectionFeather").addEventListener("input", () => $("featherValue").value = $("selectionFeather").value);
+	$("selectionHue").addEventListener("pointerdown", beginHueAdjustment); $("selectionHue").addEventListener("keydown", beginHueAdjustment); $("selectionHue").addEventListener("input", () => { beginHueAdjustment(); $("selectionHueValue").value = $("selectionHue").value; scheduleHuePreview(); }); $("selectionHue").addEventListener("change", finishHueAdjustment);
 	$("colourSwatch").addEventListener("click", openColourDialog); $("hueRange").addEventListener("input", () => { syncColourInputs(hsvToRgb({h: +$("hueRange").value, s: +$("saturationInput").value, v: +$("valueInput").value})); drawColourField(); }); $("colourField").addEventListener("pointerdown", sampleColourField); $("colourField").addEventListener("pointermove", event => { if (event.buttons === 1) sampleColourField(event); });
 	$("hexInput").addEventListener("change", () => { const parsed = parseColour($("hexInput").value); if (!parsed) return $("hexInput").setAttribute("aria-invalid", "true"); $("hexInput").removeAttribute("aria-invalid"); syncColourInputs(hexToRgb(parsed.hex)); drawColourField(); });
 	["redInput", "greenInput", "blueInput"].forEach(id => $(id).addEventListener("change", () => { syncColourInputs({r: +$("redInput").value, g: +$("greenInput").value, b: +$("blueInput").value}); drawColourField(); }));

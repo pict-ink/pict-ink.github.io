@@ -1,0 +1,19 @@
+.topbar[hidden] {
+	display: none;
+}
+
+.empty-mode .app-shell {
+	height: 100vh;
+}
+
+.selection-hue[hidden] {
+	display: none;
+}
+
+.selection-hue small {
+	display: block;
+	margin-top: 4px;
+	color: #7f8480;
+	font-size: .68rem;
+	line-height: 1.4;
+}
