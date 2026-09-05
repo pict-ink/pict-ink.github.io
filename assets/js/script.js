@@ -142,9 +142,9 @@
 	function restoreOutsideSelection(result, original, layer = activeLayer()) {
 		const asset = activeAsset(); if (!asset.selection) return; const changed = makeCanvas(result.width, result.height); changed.getContext("2d").drawImage(result, 0, 0); const context = result.getContext("2d"); context.clearRect(0, 0, result.width, result.height); context.drawImage(original, 0, 0); context.save(); context.translate(-(layer.offsetX || 0), -(layer.offsetY || 0)); clipSelection(context); context.translate(layer.offsetX || 0, layer.offsetY || 0); context.clearRect(0, 0, result.width, result.height); context.drawImage(changed, 0, 0); context.restore();
 	}
-	function drawLayers(target, width, height) {
+	function drawLayers(target, width, height, smoothing = true) {
 		const asset = activeAsset(), edit = asset.edit, crop = edit.crop, context = target.getContext("2d");
-		target.width = width; target.height = height; context.clearRect(0, 0, width, height); context.save(); context.filter = filterString(edit, width / (Math.abs(edit.rotation % 180) === 90 ? crop.height : crop.width));
+		target.width = width; target.height = height; context.imageSmoothingEnabled = smoothing; context.imageSmoothingQuality = smoothing ? "high" : "low"; context.clearRect(0, 0, width, height); context.save(); context.filter = filterString(edit, width / (Math.abs(edit.rotation % 180) === 90 ? crop.height : crop.width));
 		context.translate(width / 2, height / 2); context.scale(edit.flipX ? -1 : 1, edit.flipY ? -1 : 1); context.rotate(edit.rotation * Math.PI / 180);
 		const quarter = Math.abs(edit.rotation % 180) === 90, drawWidth = quarter ? height : width, drawHeight = quarter ? width : height;
 		context.drawImage(compositeDocument(asset), crop.x, crop.y, crop.width, crop.height, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
@@ -606,10 +606,28 @@
 	const outputDimensions = width => { const crop = activeAsset().edit.crop; return [Math.round(width), Math.max(1, Math.round(width * crop.height / crop.width))]; };
 	const canvasBlob = (output, type, quality) => new Promise(resolve => output.toBlob(resolve, type, quality));
 	function download(blob, name) { const url = URL.createObjectURL(blob), link = document.createElement("a"); link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
-	async function makeExport(width, height) { const output = makeCanvas(width, height); drawLayers(output, width, height); return canvasBlob(output, $("exportFormat").value, +$("quality").value / 100); }
+	let exportPica;
+	const resamplingHints = {canvas: "Uses the browser's fast native image scaling.", mks2013: "Uses Pica's sharp MKS2013 filter for detailed photographs and web graphics.", lanczos3: "Uses Pica's classic Lanczos3 filter for high-quality photographic downscaling.", nearest: "Preserves hard pixel edges without blending neighbouring colours."};
+	function updateResamplingHint() { const mode = $("exportResampling").value; $("resamplingHint").textContent = resamplingHints[mode] || resamplingHints.canvas; }
+	function sourceExportDimensions() { const asset = activeAsset(), crop = asset.edit.crop, quarter = Math.abs(asset.edit.rotation % 180) === 90; return [Math.max(1, Math.round(quarter ? crop.height : crop.width)), Math.max(1, Math.round(quarter ? crop.width : crop.height))]; }
+	async function renderExport(width, height) {
+		const mode = $("exportResampling").value, output = makeCanvas(width, height);
+		if (mode === "canvas") { drawLayers(output, width, height); return output; }
+		if (mode === "nearest") { drawLayers(output, width, height, false); return output; }
+		if (!window.pica) throw new Error("The high-quality resampler did not load");
+		const [sourceWidth, sourceHeight] = sourceExportDimensions(), source = makeCanvas(sourceWidth, sourceHeight);
+		try {
+			drawLayers(source, sourceWidth, sourceHeight);
+			if (sourceWidth === width && sourceHeight === height) { output.getContext("2d").drawImage(source, 0, 0); return output; }
+			exportPica ||= window.pica({features: ["js", "wasm", "ww"]});
+			await exportPica.resize(source, output, {filter: mode});
+			return output;
+		} finally { source.width = 1; source.height = 1; }
+	}
+	async function makeExport(width, height) { const output = await renderExport(width, height); try { return await canvasBlob(output, $("exportFormat").value, +$("quality").value / 100); } finally { output.width = 1; output.height = 1; } }
 	async function exportImage() {
 		const width = Math.round(+$("exportWidth").value), height = Math.round(+$("exportHeight").value); if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1 || width > 16384 || height > 16384 || width * height > 80000000) return showToast("Choose an export no larger than 80 MP or 16,384 px per side"); $("exportButton").disabled = true;
-		try { const blob = await makeExport(width, height); if (!blob) throw new Error(); $("estimatedSize").textContent = formatBytes(blob.size); download(blob, cleanName($("exportName").value) + "." + extension[$("exportFormat").value]); showToast("Image exported"); } catch { showToast("This browser could not encode that format"); } finally { $("exportButton").disabled = false; }
+		try { const blob = await makeExport(width, height); if (!blob) throw new Error(); $("estimatedSize").textContent = formatBytes(blob.size); download(blob, cleanName($("exportName").value) + "." + extension[$("exportFormat").value]); showToast("Image exported"); } catch (error) { showToast(error?.message || "This browser could not encode that format"); } finally { $("exportButton").disabled = false; }
 	}
 	async function exportVariants() {
 		const widths = [...document.querySelectorAll("[name=variant]:checked")].map(input => +input.value).filter(width => width <= activeAsset().edit.crop.width); if (!widths.length) return showToast("Select a width no larger than the crop");
@@ -704,6 +722,7 @@
 	$("applyLayerTransform").addEventListener("click",applyLayerTransformValues); $("applyPerspective").addEventListener("click",applyPerspectiveWarp);
 	$("exportWidth").addEventListener("change", () => { if ($("lockRatio").checked) $("exportHeight").value = outputDimensions(+$("exportWidth").value)[1]; }); $("exportHeight").addEventListener("change", () => { if ($("lockRatio").checked) $("exportWidth").value = Math.round(+$("exportHeight").value * activeAsset().edit.crop.width / activeAsset().edit.crop.height); });
 	$("exportFormat").addEventListener("change", () => { $("qualityLabel").hidden = $("exportFormat").value === "image/png"; updateMarkup(); }); $("quality").addEventListener("input", () => $("qualityValue").value = $("quality").value);
+	$("exportResampling").addEventListener("change", updateResamplingHint); updateResamplingHint();
 	$("exportName").addEventListener("input", updateMarkup); document.querySelectorAll("[name=variant]").forEach(input => input.addEventListener("change", updateMarkup)); $("exportButton").addEventListener("click", exportImage); $("variantsButton").addEventListener("click", exportVariants);
 	$("copyMarkup").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("markupOutput").value); showToast("Markup copied"); } catch { $("markupOutput").select(); document.execCommand("copy"); showToast("Markup copied"); } });
 	document.addEventListener("keydown", event => {

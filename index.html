@@ -16,6 +16,7 @@
 		<link rel="stylesheet" href="assets/css/selection-hue.css">
 		<link rel="stylesheet" href="assets/css/polish.css">
 		<link rel="stylesheet" href="assets/css/advanced.css">
+		<script src="assets/js/vendor/pica.min.js" defer></script>
 		<script src="assets/js/script.js" defer></script>
 	</head>
 	<body class="empty-mode">
@@ -165,6 +166,8 @@
 							<div class="field-row"><label>Width<input id="exportWidth" type="number" min="1"></label><label>Height<input id="exportHeight" type="number" min="1"></label></div>
 							<label class="check-label"><input id="lockRatio" type="checkbox" checked> Lock aspect ratio</label>
 							<label>Format<select id="exportFormat"><option value="image/webp">WebP</option><option value="image/jpeg">JPEG</option><option value="image/png">PNG</option></select></label>
+							<label>Resampling<select id="exportResampling"><option value="canvas">Fast - native canvas</option><option value="mks2013">Quality - Pica mks2013</option><option value="lanczos3">Quality - Pica Lanczos3</option><option value="nearest">Pixel art - nearest neighbour</option></select></label>
+							<p class="section-copy" id="resamplingHint">Uses the browser's fast native image scaling.</p>
 							<label class="range-label" id="qualityLabel"><span>Quality <output id="qualityValue">82</output>%</span><input id="quality" type="range" min="1" max="100" value="82"></label>
 							<div class="export-summary"><span>Estimated size</span><strong id="estimatedSize">Calculate on export</strong></div><button class="button primary full" id="exportButton" type="button">Export image</button>
 						</section>
