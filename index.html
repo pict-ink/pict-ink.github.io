@@ -12,90 +12,112 @@
 	</head>
 	<body>
 		<a class="skip-link" href="#workspace">Skip to editor</a>
-		<header class="topbar">
-		  <div class="brand"><span class="brand-mark" aria-hidden="true">L</span><span>Lumen</span></div>
-		  <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/avif" multiple hidden>
-		</header>
+		<header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">L</span><span>Lumen</span></div></header>
+		<input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/avif" multiple hidden>
 		<main id="workspace" class="app-shell">
-		  <section class="empty-state" id="emptyState">
-		    <div class="empty-art" aria-hidden="true"><span></span></div>
-		    <h1>Lumen</h1>
-		    <button class="button primary large" id="emptyOpenButton" type="button">Choose an image</button>
-		    <p class="drop-hint">or drop an image here / paste from the clipboard</p>
-		    <div class="feature-row" aria-label="Key features"><span>Local processing</span><span>Responsive variants</span><span>PNG, JPEG &amp; WebP</span></div>
-		  </section>
-		  <section class="editor" id="editor" hidden>
-		    <aside class="asset-panel" aria-label="Images">
-		      <div class="panel-heading"><h2>Images</h2><button class="icon-button" id="addButton" type="button" aria-label="Add images">+</button></div>
-		      <div class="asset-list" id="assetList"></div>
-		    </aside>
-		    <section class="canvas-area" aria-label="Image preview">
-		      <div class="canvas-toolbar">
-		        <div><button class="icon-button" id="undoButton" type="button" aria-label="Undo" disabled>↶</button><button class="icon-button" id="redoButton" type="button" aria-label="Redo" disabled>↷</button><button class="text-button" id="resetButton" type="button">Reset</button></div>
-		        <div class="zoom-actions"><button class="icon-button" id="zoomOut" type="button" aria-label="Zoom out">−</button><output id="zoomOutput">Fit</output><button class="icon-button" id="zoomIn" type="button" aria-label="Zoom in">+</button></div>
-		      </div>
-		      <div class="paint-toolbar" role="toolbar" aria-label="Painting tools">
-		        <button class="paint-tool active" data-tool="select" type="button" title="Rectangle select"><span>□</span>Select</button>
-		        <button class="paint-tool" data-tool="lasso" type="button" title="Lasso select"><span>⌁</span>Lasso</button>
-		        <button class="paint-tool" data-tool="eyedropper" type="button" title="Eyedropper"><span>◉</span>Pick</button>
-		        <button class="paint-tool" data-tool="fill" type="button" title="Flood fill"><span>▰</span>Fill</button>
-		        <button class="paint-tool" data-tool="pencil" type="button" title="Pencil"><span>╱</span>Pencil</button>
-		        <button class="paint-tool" data-tool="brush" type="button" title="Brush"><span>●</span>Brush</button>
-		        <button class="paint-tool" data-tool="eraser" type="button" title="Eraser"><span>◇</span>Eraser</button>
-		      </div>
-		      <div class="canvas-stage" id="canvasStage"><div class="canvas-wrap" id="canvasWrap"><canvas id="previewCanvas"></canvas><canvas id="interactionCanvas"></canvas></div><div class="drop-overlay" id="dropOverlay">Drop images to add them</div></div>
-		      <div class="image-status"><span id="sourceInfo"></span><span id="editedInfo"></span></div>
-		    </section>
-		    <aside class="controls-panel" aria-label="Editing controls">
-		      <div class="control-tabs" role="tablist"><button class="tab active" data-tab="edit" type="button" role="tab" aria-selected="true">Edit</button><button class="tab" data-tab="export" type="button" role="tab" aria-selected="false">Export</button></div>
-		      <div class="tab-panel" id="editPanel">
-		        <section class="control-section tool-options">
-		          <div class="section-heading"><h3 id="activeToolName">Rectangle select</h3><button class="text-button" id="clearSelection" type="button">Clear selection</button></div>
-		          <div class="field-row"><label>Colour<input id="toolColor" type="color" value="#d5b871"></label><label>Size<input id="toolSize" type="number" min="1" max="200" value="18"></label></div>
-		          <label class="range-label"><span>Fill tolerance <output id="toleranceValue">24</output></span><input id="fillTolerance" type="range" min="0" max="100" value="24"></label>
-		          <div class="selection-actions"><button class="button secondary" id="cropToSelection" type="button">Crop to selection</button><button class="button secondary" id="deleteSelection" type="button">Delete selection</button></div>
-		        </section>
-		        <section class="control-section">
-		          <h3>Transform</h3>
-		          <div class="tool-grid"><button class="tool-button" id="rotateLeft" type="button"><span>↶</span>Rotate left</button><button class="tool-button" id="rotateRight" type="button"><span>↷</span>Rotate right</button><button class="tool-button" id="flipHorizontal" type="button"><span>↔</span>Flip H</button><button class="tool-button" id="flipVertical" type="button"><span>↕</span>Flip V</button></div>
-		        </section>
-		        <section class="control-section">
-		          <div class="section-heading"><h3>Crop</h3><button class="text-button" id="resetCrop" type="button">Full image</button></div>
-		          <label>Aspect ratio<select id="aspectRatio"><option value="free">Free</option><option value="1">Square · 1:1</option><option value="1.7777778">Landscape · 16:9</option><option value="1.5">Photo · 3:2</option><option value="0.8">Portrait · 4:5</option></select></label>
-		          <div class="field-row"><label>X<input id="cropX" type="number" min="0"></label><label>Y<input id="cropY" type="number" min="0"></label></div>
-		          <div class="field-row"><label>Width<input id="cropWidth" type="number" min="1"></label><label>Height<input id="cropHeight" type="number" min="1"></label></div>
-		          <button class="button secondary full" id="applyAspect" type="button">Apply ratio from centre</button>
-		        </section>
-		        <section class="control-section">
-		          <div class="section-heading"><h3>Adjust</h3><button class="text-button" id="resetAdjustments" type="button">Reset</button></div>
-		          <label class="range-label"><span>Brightness <output id="brightnessValue">0</output></span><input id="brightness" type="range" min="-100" max="100" value="0"></label>
-		          <label class="range-label"><span>Contrast <output id="contrastValue">0</output></span><input id="contrast" type="range" min="-100" max="100" value="0"></label>
-		          <label class="range-label"><span>Saturation <output id="saturationValue">0</output></span><input id="saturation" type="range" min="-100" max="100" value="0"></label>
-		          <label class="range-label"><span>Warmth <output id="warmthValue">0</output></span><input id="warmth" type="range" min="-100" max="100" value="0"></label>
-		          <label class="range-label"><span>Blur <output id="blurValue">0</output></span><input id="blur" type="range" min="0" max="20" value="0"></label>
-		        </section>
-		      </div>
-		      <div class="tab-panel" id="exportPanel" hidden>
-		        <section class="control-section export-section">
-		          <h3>Output</h3>
-		          <label>File name<input id="exportName" type="text" value="image"></label>
-		          <div class="field-row"><label>Width<input id="exportWidth" type="number" min="1"></label><label>Height<input id="exportHeight" type="number" min="1"></label></div>
-		          <label class="check-label"><input id="lockRatio" type="checkbox" checked> Lock aspect ratio</label>
-		          <label>Format<select id="exportFormat"><option value="image/webp">WebP</option><option value="image/jpeg">JPEG</option><option value="image/png">PNG</option></select></label>
-		          <label class="range-label" id="qualityLabel"><span>Quality <output id="qualityValue">82</output>%</span><input id="quality" type="range" min="1" max="100" value="82"></label>
-		          <div class="export-summary"><span>Estimated size</span><strong id="estimatedSize">Calculate on export</strong></div>
-		          <button class="button primary full" id="exportButton" type="button">Export image</button>
-		        </section>
-		        <section class="control-section">
-		          <h3>Responsive set</h3><p class="section-copy">Generate common widths without enlarging the source.</p>
-		          <div class="check-grid"><label><input type="checkbox" name="variant" value="320" checked> 320w</label><label><input type="checkbox" name="variant" value="640" checked> 640w</label><label><input type="checkbox" name="variant" value="960" checked> 960w</label><label><input type="checkbox" name="variant" value="1280" checked> 1280w</label><label><input type="checkbox" name="variant" value="1600"> 1600w</label><label><input type="checkbox" name="variant" value="1920"> 1920w</label></div>
-		          <button class="button secondary full" id="variantsButton" type="button">Download variants</button>
-		          <label class="markup-label">Generated markup<textarea id="markupOutput" rows="4" readonly></textarea></label><button class="text-button copy-button" id="copyMarkup" type="button">Copy markup</button>
-		        </section>
-		      </div>
-		    </aside>
-		  </section>
+			<section class="empty-state" id="emptyState">
+				<div class="empty-art" aria-hidden="true"><span></span></div>
+				<h1>Lumen</h1>
+				<button class="button primary large" id="emptyOpenButton" type="button">Choose an image</button>
+				<p class="drop-hint">or drop an image here / paste from the clipboard</p>
+				<div class="feature-row" aria-label="Key features"><span>Local processing</span><span>Responsive variants</span><span>PNG, JPEG &amp; WebP</span></div>
+			</section>
+			<section class="editor" id="editor" hidden>
+				<aside class="left-panel" aria-label="Tools and images">
+					<div class="left-tabs" role="tablist">
+						<button class="left-tab active" data-left-tab="tools" type="button" role="tab" aria-selected="true">Tools</button>
+						<button class="left-tab" data-left-tab="images" type="button" role="tab" aria-selected="false">Images</button>
+					</div>
+					<div class="left-tab-panel" id="toolsPanel">
+						<div class="vertical-tools" role="toolbar" aria-label="Editing tools">
+							<button class="paint-tool active" data-tool="select" type="button"><span>□</span>Select</button>
+							<button class="paint-tool" data-tool="lasso" type="button"><span>⌁</span>Lasso</button>
+							<button class="paint-tool" data-tool="eyedropper" type="button"><span>◉</span>Pick</button>
+							<button class="paint-tool" data-tool="fill" type="button"><span>▰</span>Fill</button>
+							<button class="paint-tool" data-tool="pencil" type="button"><span>╱</span>Pencil</button>
+							<button class="paint-tool" data-tool="brush" type="button"><span>●</span>Brush</button>
+							<button class="paint-tool" data-tool="eraser" type="button"><span>◇</span>Eraser</button>
+							<button class="paint-tool" data-tool="line" type="button"><span>╱</span>Line</button>
+							<button class="paint-tool" data-tool="rectangle" type="button"><span>▭</span>Rectangle</button>
+							<button class="paint-tool" data-tool="ellipse" type="button"><span>○</span>Ellipse</button>
+							<button class="paint-tool" data-tool="text" type="button"><span>T</span>Text</button>
+						</div>
+					</div>
+					<div class="left-tab-panel" id="imagesPanel" hidden>
+						<div class="panel-heading"><h2>Images</h2><button class="icon-button" id="addButton" type="button" aria-label="Add images">+</button></div>
+						<div class="asset-list" id="assetList"></div>
+					</div>
+				</aside>
+				<section class="canvas-area" aria-label="Image preview">
+					<div class="canvas-toolbar">
+						<div><button class="icon-button" id="undoButton" type="button" aria-label="Undo" disabled>↶</button><button class="icon-button" id="redoButton" type="button" aria-label="Redo" disabled>↷</button><button class="text-button" id="resetButton" type="button">Reset</button></div>
+						<div class="clipboard-actions"><button class="text-button" id="copyButton" type="button">Copy</button><button class="text-button" id="cutButton" type="button">Cut</button><button class="text-button" id="pasteButton" type="button">Paste</button></div>
+						<div class="zoom-actions"><button class="icon-button" id="zoomOut" type="button" aria-label="Zoom out">−</button><output id="zoomOutput">Fit</output><button class="icon-button" id="zoomIn" type="button" aria-label="Zoom in">+</button></div>
+					</div>
+					<div class="canvas-stage" id="canvasStage"><div class="canvas-wrap" id="canvasWrap"><canvas id="previewCanvas"></canvas><canvas id="interactionCanvas"></canvas></div><div class="drop-overlay" id="dropOverlay">Drop images to add them</div></div>
+					<div class="image-status"><span id="sourceInfo"></span><span id="editedInfo"></span></div>
+					<div class="palette-bar" id="paletteBar" aria-label="Colour palette"></div>
+				</section>
+				<aside class="controls-panel" aria-label="Editing controls">
+					<div class="control-tabs" role="tablist"><button class="tab active" data-tab="edit" type="button" role="tab" aria-selected="true">Edit</button><button class="tab" data-tab="layers" type="button" role="tab" aria-selected="false">Layers</button><button class="tab" data-tab="export" type="button" role="tab" aria-selected="false">Export</button></div>
+					<div class="tab-panel" id="editPanel">
+						<section class="control-section tool-options">
+							<div class="section-heading"><h3 id="activeToolName">Rectangle select</h3><button class="text-button" id="clearSelection" type="button">Clear selection</button></div>
+							<label>Colour</label>
+							<div class="colour-control"><button class="colour-swatch" id="colourSwatch" type="button" aria-label="Edit colour value"></button><input id="colorText" type="text" value="#f3a6b8" aria-label="Colour value" spellcheck="false"></div>
+							<p class="field-help">Hex, RGB, HSL or any CSS colour</p>
+							<div class="field-row"><label>Size<input id="toolSize" type="number" min="1" max="200" value="18"></label><label>Text size<input id="textSize" type="number" min="6" max="300" value="40"></label></div>
+							<label id="textValueLabel">Text<input id="textValue" type="text" value="Text"></label>
+							<label class="check-label"><input id="shapeFill" type="checkbox"> Fill shapes</label>
+							<label class="range-label"><span>Fill tolerance <output id="toleranceValue">24</output></span><input id="fillTolerance" type="range" min="0" max="100" value="24"></label>
+							<div class="selection-actions"><button class="button secondary" id="cropToSelection" type="button">Crop selection</button><button class="button secondary" id="deleteSelection" type="button">Delete selection</button></div>
+						</section>
+						<section class="control-section">
+							<h3>Transform</h3>
+							<div class="tool-grid"><button class="tool-button" id="rotateLeft" type="button"><span>↶</span>Rotate left</button><button class="tool-button" id="rotateRight" type="button"><span>↷</span>Rotate right</button><button class="tool-button" id="flipHorizontal" type="button"><span>↔</span>Flip H</button><button class="tool-button" id="flipVertical" type="button"><span>↕</span>Flip V</button></div>
+						</section>
+						<section class="control-section">
+							<div class="section-heading"><h3>Crop</h3><button class="text-button" id="resetCrop" type="button">Full image</button></div>
+							<label>Aspect ratio<select id="aspectRatio"><option value="free">Free</option><option value="1">Square · 1:1</option><option value="1.7777778">Landscape · 16:9</option><option value="1.5">Photo · 3:2</option><option value="0.8">Portrait · 4:5</option></select></label>
+							<div class="field-row"><label>X<input id="cropX" type="number" min="0"></label><label>Y<input id="cropY" type="number" min="0"></label></div>
+							<div class="field-row"><label>Width<input id="cropWidth" type="number" min="1"></label><label>Height<input id="cropHeight" type="number" min="1"></label></div>
+							<button class="button secondary full spaced-button" id="applyAspect" type="button">Apply ratio from centre</button>
+						</section>
+						<section class="control-section">
+							<div class="section-heading"><h3>Adjust</h3><button class="text-button" id="resetAdjustments" type="button">Reset</button></div>
+							<label class="range-label"><span>Brightness <output id="brightnessValue">0</output></span><input id="brightness" type="range" min="-100" max="100" value="0"></label>
+							<label class="range-label"><span>Contrast <output id="contrastValue">0</output></span><input id="contrast" type="range" min="-100" max="100" value="0"></label>
+							<label class="range-label"><span>Saturation <output id="saturationValue">0</output></span><input id="saturation" type="range" min="-100" max="100" value="0"></label>
+							<label class="range-label"><span>Warmth <output id="warmthValue">0</output></span><input id="warmth" type="range" min="-100" max="100" value="0"></label>
+							<label class="range-label"><span>Blur <output id="blurValue">0</output></span><input id="blur" type="range" min="0" max="20" value="0"></label>
+						</section>
+					</div>
+					<div class="tab-panel" id="layersPanel" hidden>
+						<section class="control-section layers-section">
+							<div class="section-heading"><h3>Layers</h3><button class="icon-button" id="addLayer" type="button" aria-label="Add layer">+</button></div>
+							<div class="layers-list" id="layersList"></div>
+							<div class="layer-actions"><button class="button secondary" id="duplicateLayer" type="button">Duplicate</button><button class="button secondary" id="deleteLayer" type="button">Delete</button><button class="button secondary" id="layerUp" type="button">Move up</button><button class="button secondary" id="layerDown" type="button">Move down</button></div>
+							<label class="range-label"><span>Opacity <output id="layerOpacityValue">100</output>%</span><input id="layerOpacity" type="range" min="0" max="100" value="100"></label>
+						</section>
+					</div>
+					<div class="tab-panel" id="exportPanel" hidden>
+						<section class="control-section export-section">
+							<h3>Output</h3><label>File name<input id="exportName" type="text" value="image"></label>
+							<div class="field-row"><label>Width<input id="exportWidth" type="number" min="1"></label><label>Height<input id="exportHeight" type="number" min="1"></label></div>
+							<label class="check-label"><input id="lockRatio" type="checkbox" checked> Lock aspect ratio</label>
+							<label>Format<select id="exportFormat"><option value="image/webp">WebP</option><option value="image/jpeg">JPEG</option><option value="image/png">PNG</option></select></label>
+							<label class="range-label" id="qualityLabel"><span>Quality <output id="qualityValue">82</output>%</span><input id="quality" type="range" min="1" max="100" value="82"></label>
+							<div class="export-summary"><span>Estimated size</span><strong id="estimatedSize">Calculate on export</strong></div><button class="button primary full" id="exportButton" type="button">Export image</button>
+						</section>
+						<section class="control-section"><h3>Responsive set</h3><p class="section-copy">Generate common widths without enlarging the source.</p>
+							<div class="check-grid"><label><input type="checkbox" name="variant" value="320" checked> 320w</label><label><input type="checkbox" name="variant" value="640" checked> 640w</label><label><input type="checkbox" name="variant" value="960" checked> 960w</label><label><input type="checkbox" name="variant" value="1280" checked> 1280w</label><label><input type="checkbox" name="variant" value="1600"> 1600w</label><label><input type="checkbox" name="variant" value="1920"> 1920w</label></div>
+							<button class="button secondary full" id="variantsButton" type="button">Download variants</button><label class="markup-label">Generated markup<textarea id="markupOutput" rows="4" readonly></textarea></label><button class="text-button copy-button" id="copyMarkup" type="button">Copy markup</button>
+						</section>
+					</div>
+				</aside>
+			</section>
 		</main>
+		<menu class="context-menu" id="contextMenu"><button data-command="copy" type="button">Copy <span>Ctrl+C</span></button><button data-command="cut" type="button">Cut <span>Ctrl+X</span></button><button data-command="paste" type="button">Paste <span>Ctrl+V</span></button><hr><button data-command="delete" type="button">Delete selection <span>Delete</span></button><button data-command="clear" type="button">Clear selection <span>Esc</span></button></menu>
 		<div class="toast" id="toast" role="status" aria-live="polite"></div>
 	</body>
 </html>
