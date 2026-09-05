@@ -6,7 +6,7 @@
 	const adjustmentIds = ["brightness", "contrast", "saturation", "warmth", "blur"];
 	const extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"};
 	const colours = ["#f3a6b8", "#ffb38a", "#f6d77d", "#b9e18f", "#80d7bd", "#83cbea", "#aaa7ed", "#d6a0df", "#a92f53", "#b94d22", "#a17a08", "#39752d", "#087363", "#176386", "#50439a", "#792f85"];
-	const state = {assets: [], active: -1, zoom: 0, history: [], future: [], tool: "select", gesture: null, clipboard: null, colour: colours[0], restoring: false, textPoint: null, hue: 345, nudge: null, cloneSource: null, grid: false, draftTimer: null, hueAdjustment: null, hueFrame: 0};
+	const state = {assets: [], active: -1, zoom: 0, history: [], future: [], tool: "select", gesture: null, selectionDraft: null, clipboard: null, colour: colours[0], restoring: false, textPoint: null, hue: 345, nudge: null, cloneSource: null, grid: false, draftTimer: null, hueAdjustment: null, hueFrame: 0};
 	let toastTimer;
 
 	const makeCanvas = (width, height) => { const result = document.createElement("canvas"); result.width = width; result.height = height; return result; };
@@ -94,7 +94,7 @@
 		}));
 	}
 	function selectAsset(index) {
-		state.active = index; state.history = []; state.future = []; state.zoom = 0; state.gesture = null; state.cloneSource = null; renderAssets(); syncControls(); updateHistoryButtons(); updateActionAvailability(); render();
+		state.active = index; state.history = []; state.future = []; state.zoom = 0; state.gesture = null; state.selectionDraft = null; state.cloneSource = null; renderAssets(); syncControls(); updateHistoryButtons(); updateActionAvailability(); render();
 	}
 	function syncControls() {
 		const asset = activeAsset(); if (!asset) return; const edit = asset.edit;
@@ -144,27 +144,55 @@
 	function drawSelection(transient) {
 		const context = interactionCanvas.getContext("2d"); context.clearRect(0, 0, interactionCanvas.width, interactionCanvas.height);
 		if (state.grid && activeAsset()) { const crop = activeAsset().edit.crop, stepX = interactionCanvas.width / crop.width, stepY = interactionCanvas.height / crop.height; if (Math.min(stepX, stepY) >= 6) { context.save(); context.beginPath(); for (let x = 0; x <= interactionCanvas.width; x += stepX) { context.moveTo(x, 0); context.lineTo(x, interactionCanvas.height); } for (let y = 0; y <= interactionCanvas.height; y += stepY) { context.moveTo(0, y); context.lineTo(interactionCanvas.width, y); } context.strokeStyle = "#ffffff1f"; context.lineWidth = 1; context.stroke(); context.restore(); } }
-		const selection = transient || activeAsset()?.selection; if (!selection) return;
-		if (selection.type === "magic") { const bounds = selectionBounds(selection), a = sourceToCanvas({x: bounds.x, y: bounds.y}), b = sourceToCanvas({x: bounds.x + bounds.width, y: bounds.y + bounds.height}); context.save(); context.fillStyle = "#d5b87122"; selection.spans.forEach(span => { const p = sourceToCanvas({x: span.x, y: span.y}), q = sourceToCanvas({x: span.x + span.width, y: span.y + 1}); context.fillRect(p.x, p.y, q.x - p.x, q.y - p.y); }); context.setLineDash([5, 4]); context.strokeStyle = "#fff"; context.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y); context.restore(); drawTransformHandles(context, selection); return; }
+		const selection = transient || activeAsset()?.selection; if (!selection) { drawSelectionDraft(context); return; }
+		if (selection.type === "magic") { const bounds = selectionBounds(selection), a = sourceToCanvas({x: bounds.x, y: bounds.y}), b = sourceToCanvas({x: bounds.x + bounds.width, y: bounds.y + bounds.height}); context.save(); context.fillStyle = "#d5b87122"; selection.spans.forEach(span => { const p = sourceToCanvas({x: span.x, y: span.y}), q = sourceToCanvas({x: span.x + span.width, y: span.y + 1}); context.fillRect(p.x, p.y, q.x - p.x, q.y - p.y); }); context.setLineDash([5, 4]); context.strokeStyle = "#fff"; context.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y); context.restore(); drawTransformHandles(context, selection); drawSelectionDraft(context); return; }
 		if (selection.points.length < 2) return;
 		const points = selection.points.map(sourceToCanvas); context.save(); context.beginPath();
 		if (selection.type === "rect") context.rect(points[0].x, points[0].y, points[1].x - points[0].x, points[1].y - points[0].y);
+		else if (selection.type === "path") { context.moveTo(points[0].x, points[0].y); for (let index = 1; index < points.length; index++) { const previous = selection.points[index - 1], current = selection.points[index], out = sourceToCanvas(previous.out || previous), incoming = sourceToCanvas(current.in || current); context.bezierCurveTo(out.x, out.y, incoming.x, incoming.y, points[index].x, points[index].y); } if (!transient) { const previous = selection.points.at(-1), current = selection.points[0], out = sourceToCanvas(previous.out || previous), incoming = sourceToCanvas(current.in || current); context.bezierCurveTo(out.x, out.y, incoming.x, incoming.y, points[0].x, points[0].y); } }
 		else { context.moveTo(points[0].x, points[0].y); points.slice(1).forEach(point => context.lineTo(point.x, point.y)); if (!transient) context.closePath(); }
-		context.setLineDash([5, 4]); context.lineWidth = 1.5; context.strokeStyle = "#fff"; context.stroke(); context.lineDashOffset = 5; context.strokeStyle = "#171819"; context.stroke(); context.restore(); if (!transient) drawTransformHandles(context, selection);
+		context.setLineDash([5, 4]); context.lineWidth = 1.5; context.strokeStyle = "#fff"; context.stroke(); context.lineDashOffset = 5; context.strokeStyle = "#171819"; context.stroke(); context.restore(); if (!transient) drawTransformHandles(context, selection); drawSelectionDraft(context);
 	}
 	function selectionPath(context, selection = activeAsset().selection) {
 		if (!selection) return false; context.beginPath();
 		if (selection.type === "magic") { selection.spans.forEach(span => context.rect(span.x, span.y, span.width, 1)); return true; }
 		if (selection.points.length < 2) return false; const points = selection.points;
 		if (selection.type === "rect") context.rect(points[0].x, points[0].y, points[1].x - points[0].x, points[1].y - points[0].y);
+		else if (selection.type === "path") { context.moveTo(points[0].x, points[0].y); for (let index = 1; index < points.length; index++) { const previous = points[index - 1], current = points[index]; context.bezierCurveTo(previous.out?.x ?? previous.x, previous.out?.y ?? previous.y, current.in?.x ?? current.x, current.in?.y ?? current.y, current.x, current.y); } const previous = points.at(-1), current = points[0]; context.bezierCurveTo(previous.out?.x ?? previous.x, previous.out?.y ?? previous.y, current.in?.x ?? current.x, current.in?.y ?? current.y, current.x, current.y); context.closePath(); }
 		else { context.moveTo(points[0].x, points[0].y); points.slice(1).forEach(point => context.lineTo(point.x, point.y)); context.closePath(); }
 		return true;
 	}
 	function clipSelection(context) { if (selectionPath(context)) context.clip(); }
 	function selectionBounds(selection = activeAsset().selection) {
 		if (selection.type === "magic") { let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0; selection.spans.forEach(span => { minX = Math.min(minX, span.x); minY = Math.min(minY, span.y); maxX = Math.max(maxX, span.x + span.width); maxY = Math.max(maxY, span.y + 1); }); return {x: minX, y: minY, width: maxX - minX, height: maxY - minY}; }
-		const xs = selection.points.map(point => point.x), ys = selection.points.map(point => point.y), x = Math.max(0, Math.min(...xs)), y = Math.max(0, Math.min(...ys));
+		const boundaryPoints = selection.type === "path" ? selection.points.flatMap(point => [point, point.in, point.out].filter(Boolean)) : selection.points, xs = boundaryPoints.map(point => point.x), ys = boundaryPoints.map(point => point.y), x = Math.max(0, Math.min(...xs)), y = Math.max(0, Math.min(...ys));
 		return {x, y, width: Math.max(1, Math.min(activeAsset().width, Math.max(...xs)) - x), height: Math.max(1, Math.min(activeAsset().height, Math.max(...ys)) - y)};
+	}
+	function drawSelectionDraft(context) {
+		const draft = state.selectionDraft; if (!draft?.points.length) return; const points = draft.points.map(sourceToCanvas);
+		context.save(); context.setLineDash([]); context.lineWidth = 1.5; context.strokeStyle = "#d5b871"; context.beginPath(); context.moveTo(points[0].x, points[0].y);
+		if (draft.kind === "path") for (let index = 1; index < points.length; index++) { const previous = draft.points[index - 1], current = draft.points[index], out = sourceToCanvas(previous.out || previous), incoming = sourceToCanvas(current.in || current); context.bezierCurveTo(out.x, out.y, incoming.x, incoming.y, points[index].x, points[index].y); }
+		else points.slice(1).forEach(point => context.lineTo(point.x, point.y));
+		if (draft.cursor && points.length) { const cursor = sourceToCanvas(draft.cursor); context.lineTo(cursor.x, cursor.y); }
+		context.stroke();
+		if (draft.kind === "path") draft.points.forEach((anchor, index) => { const centre = points[index]; for (const key of ["in", "out"]) if (anchor[key]) { const handle = sourceToCanvas(anchor[key]); context.beginPath(); context.strokeStyle = "#8d8060"; context.moveTo(centre.x, centre.y); context.lineTo(handle.x, handle.y); context.stroke(); context.beginPath(); context.fillStyle = "#d5b871"; context.arc(handle.x, handle.y, 3, 0, Math.PI * 2); context.fill(); } });
+		points.forEach((point, index) => { context.beginPath(); context.fillStyle = index === 0 ? "#d5b871" : "#f0f1ed"; context.strokeStyle = "#171819"; context.rect(point.x - 4, point.y - 4, 8, 8); context.fill(); context.stroke(); }); context.restore();
+	}
+	function hitDraftPoint(local) {
+		const draft = state.selectionDraft; if (!draft) return null;
+		if (draft.kind === "path") for (let index = draft.points.length - 1; index >= 0; index--) for (const key of ["in", "out"]) { const control = draft.points[index][key]; if (control) { const point = sourceToCanvas(control); if (Math.hypot(local.x - point.x, local.y - point.y) <= 9) return {index, key}; } }
+		for (let index = draft.points.length - 1; index >= 0; index--) { const point = sourceToCanvas(draft.points[index]); if (Math.hypot(local.x - point.x, local.y - point.y) <= 10) return {index, key: "anchor"}; } return null;
+	}
+	function moveDraftPoint(hit, point) {
+		const anchor = state.selectionDraft.points[hit.index]; if (hit.key !== "anchor") { anchor[hit.key] = point; return; } const dx = point.x - anchor.x, dy = point.y - anchor.y; anchor.x = point.x; anchor.y = point.y; if (anchor.in) { anchor.in.x += dx; anchor.in.y += dy; } if (anchor.out) { anchor.out.x += dx; anchor.out.y += dy; }
+	}
+	function finishSelectionDraft() {
+		const draft = state.selectionDraft; if (!draft || draft.points.length < 3) return showToast("Place at least three points"); const selection = {type: draft.kind, points: JSON.parse(JSON.stringify(draft.points))}; state.selectionDraft = null; state.gesture = null; combineSelection(selection); pushHistory(draft.before, draft.kind === "path" ? "Path selection" : "Lasso selection"); render();
+	}
+	function cancelSelectionDraft() { if (!state.selectionDraft) return false; state.selectionDraft = null; state.gesture = null; drawSelection(); showToast("Selection draft cancelled"); return true; }
+	function autoPanStage(event) {
+		const stage = $("canvasStage"), rect = stage.getBoundingClientRect(), edge = 36, speed = 18; let dx = 0, dy = 0;
+		if (event.clientX < rect.left + edge) dx = -speed; else if (event.clientX > rect.right - edge) dx = speed; if (event.clientY < rect.top + edge) dy = -speed; else if (event.clientY > rect.bottom - edge) dy = speed; if (dx || dy) stage.scrollBy(dx, dy);
 	}
 	function transformHandles(selection = activeAsset()?.selection) {
 		if (!selection || state.tool !== "move" || !activeLayer()?.floating) return [];
@@ -340,23 +368,29 @@
 		const asset = activeAsset(), layer = activeLayer(); if (!layer?.floating) return;
 		const targetIndex = Math.max(0, Math.min(layer.targetLayer ?? 0, asset.layers.length - 2)), target = asset.layers[targetIndex]; target.canvas.getContext("2d").drawImage(layer.canvas, (layer.offsetX || 0) - (target.offsetX || 0), (layer.offsetY || 0) - (target.offsetY || 0)); asset.layers.splice(asset.activeLayer, 1); asset.activeLayer = targetIndex; asset.selection = null; renderLayers();
 	}
-	function clearSelectionAndCommit() { if (!activeAsset()) return; commitFloatingText(); activeAsset().selection = null; render(); }
+	function clearSelectionAndCommit() { if (!activeAsset()) return; state.selectionDraft = null; state.gesture = null; commitFloatingText(); activeAsset().selection = null; render(); }
 
 	function selectTool(tool, preserveSelection = false) {
-		const selectionTools = ["select", "lasso", "magic"]; if (state.tool !== tool && activeAsset()?.selection && !preserveSelection && !(selectionTools.includes(state.tool) && selectionTools.includes(tool))) { commitFloatingText(); activeAsset().selection = null; drawSelection(); }
+		const selectionTools = ["select", "lasso", "path", "magic"]; if (state.tool !== tool && state.selectionDraft) cancelSelectionDraft(); if (state.tool !== tool && activeAsset()?.selection && !preserveSelection && !(selectionTools.includes(state.tool) && selectionTools.includes(tool))) { commitFloatingText(); activeAsset().selection = null; drawSelection(); }
 		state.tool = tool; document.querySelectorAll(".paint-tool").forEach(button => button.classList.toggle("active", button.dataset.tool === tool));
-		const names = {move: "Move layer", select: "Rectangle select", lasso: "Lasso select", magic: "Magic wand", eyedropper: "Eyedropper", fill: "Flood fill", pencil: "Pencil", brush: "Brush", clone: "Clone stamp", recolour: "Recolour brush", eraser: "Eraser", line: "Line", rectangle: "Rectangle", ellipse: "Ellipse", text: "Text"};
-		const hints = {move: "Drag to move. Use the handles to scale or rotate; hold Shift to keep proportions.", select: "Drag to select a rectangular area.", lasso: "Draw a freehand selection.", magic: "Click a contiguous colour area; tolerance controls the match.", eyedropper: "Click the image to sample a colour.", fill: "Click to fill a contiguous colour area.", pencil: "Draw a crisp one-pixel line.", brush: "Draw with the selected size and opacity.", clone: "Alt-click to set a source, then paint elsewhere to clone it.", recolour: "Paint colour while retaining the underlying light and shade.", eraser: "Paint transparency onto the active layer.", line: "Drag between the line endpoints.", rectangle: "Drag a rectangle; enable Fill shapes for a solid shape.", ellipse: "Drag an ellipse; enable Fill shapes for a solid shape.", text: "Click the image, enter text, then move it before stamping."};
+		const names = {move: "Move layer", select: "Rectangle select", lasso: "Lasso select", path: "Paths", magic: "Magic wand", eyedropper: "Eyedropper", fill: "Flood fill", pencil: "Pencil", brush: "Brush", clone: "Clone stamp", recolour: "Recolour brush", eraser: "Eraser", line: "Line", rectangle: "Rectangle", ellipse: "Ellipse", text: "Text"};
+		const hints = {move: "Drag to move. Use the handles to scale or rotate; hold Shift to keep proportions.", select: "Drag to select a rectangular area.", lasso: "Click for precise polygon points or drag freehand. Drag points to refine; Enter closes, Backspace removes, Escape cancels.", path: "Click for anchors; drag while placing for Bézier handles. Drag anchors or handles to refine; Enter converts the path to a selection.", magic: "Click a contiguous colour area; tolerance controls the match.", eyedropper: "Click the image to sample a colour.", fill: "Click to fill a contiguous colour area.", pencil: "Draw a crisp one-pixel line.", brush: "Draw with the selected size and opacity.", clone: "Alt-click to set a source, then paint elsewhere to clone it.", recolour: "Paint colour while retaining the underlying light and shade.", eraser: "Paint transparency onto the active layer.", line: "Drag between the line endpoints.", rectangle: "Drag a rectangle; enable Fill shapes for a solid shape.", ellipse: "Drag an ellipse; enable Fill shapes for a solid shape.", text: "Click the image, enter text, then move it before stamping."};
 		$("activeToolName").textContent = names[tool]; $("activeToolStatus").textContent = names[tool]; $("toolHint").textContent = hints[tool]; interactionCanvas.style.cursor = tool === "move" ? "move" : tool === "fill" ? "cell" : tool === "text" ? "text" : "crosshair"; updateActionAvailability();
 	}
 	function pointerPosition(event) { const rect = interactionCanvas.getBoundingClientRect(); return {x: (event.clientX - rect.left) * interactionCanvas.width / rect.width, y: (event.clientY - rect.top) * interactionCanvas.height / rect.height}; }
 	function shiftActiveLayer(dx, dy) {
 		if (!dx && !dy) return; const layer = activeLayer(), oldX = layer.offsetX || 0, oldY = layer.offsetY || 0; layer.offsetX = Math.round(oldX + dx); layer.offsetY = Math.round(oldY + dy); const movedX = layer.offsetX - oldX, movedY = layer.offsetY - oldY, selection = activeAsset().selection;
-		if (selection?.type === "magic") selection.spans.forEach(span => { span.x += movedX; span.y += movedY; }); else if (selection) selection.points.forEach(point => { point.x += movedX; point.y += movedY; });
+		if (selection?.type === "magic") selection.spans.forEach(span => { span.x += movedX; span.y += movedY; }); else if (selection) selection.points.forEach(point => { point.x += movedX; point.y += movedY; if (point.in) { point.in.x += movedX; point.in.y += movedY; } if (point.out) { point.out.x += movedX; point.out.y += movedY; } });
 	}
 	function pointerDown(event) {
 		if (!activeAsset() || event.button !== 0) return; event.preventDefault(); interactionCanvas.setPointerCapture(event.pointerId);
 		const local = pointerPosition(event), point = canvasToSource(local.x, local.y), before = snapshot();
+		if (["lasso", "path"].includes(state.tool)) {
+			if (!state.selectionDraft || state.selectionDraft.kind !== state.tool) state.selectionDraft = {kind: state.tool, points: [], before, cursor: null}; const draft = state.selectionDraft, hit = hitDraftPoint(local);
+			if (hit) { state.gesture = {draftEdit: true, hit, start: point, startLocal: local, moved: false, closeCandidate: hit.key === "anchor" && hit.index === 0 && draft.points.length >= 3}; return; }
+			if (state.tool === "path") { const anchor = {x: point.x, y: point.y, in: null, out: null}; draft.points.push(anchor); state.gesture = {draftPathNew: true, index: draft.points.length - 1, start: point, startLocal: local, moved: false}; drawSelection(); return; }
+			state.gesture = {draftLassoAdd: true, start: point, last: point, startLocal: local, moved: false}; return;
+		}
 		const transformHandle = hitTransformHandle(local); if (transformHandle) { state.gesture = beginTransform(transformHandle, point, before); interactionCanvas.style.cursor = transformHandle.name === "rotate" ? "grabbing" : `${transformHandle.name}-resize`; return; }
 		if (state.tool === "eyedropper") { const pixel = canvas.getContext("2d").getImageData(Math.max(0, Math.min(canvas.width - 1, local.x)), Math.max(0, Math.min(canvas.height - 1, local.y)), 1, 1).data; setColour("#" + [...pixel.slice(0, 3)].map(v => v.toString(16).padStart(2, "0")).join("")); return showToast("Colour sampled"); }
 		if (state.tool === "fill") { floodFill(point); pushHistory(before); return render(); }
@@ -367,9 +401,12 @@
 		if (["pencil", "brush", "eraser"].includes(state.tool)) paintLine(point, point); else if (state.tool === "recolour") recolourLine(point, point);
 	}
 	function pointerMove(event) {
-		if (!state.gesture) return; const local = pointerPosition(event), point = canvasToSource(local.x, local.y), gesture = state.gesture;
-		if (gesture.transform) { updateSelectionTransform(gesture, point, event.shiftKey); gesture.last=point; render(); }
-		else if (state.tool === "move") { const layer = activeLayer(), dx = Math.round(point.x - gesture.start.x), dy = Math.round(point.y - gesture.start.y); layer.offsetX = gesture.layerStart.x + dx; layer.offsetY = gesture.layerStart.y + dy; if (gesture.selectionStart?.type === "magic") activeAsset().selection = {...gesture.selectionStart, spans: gesture.selectionStart.spans.map(span => ({...span, x: span.x + dx, y: span.y + dy}))}; else if (gesture.selectionStart) activeAsset().selection = {...gesture.selectionStart, points: gesture.selectionStart.points.map(source => ({x: source.x + dx, y: source.y + dy}))}; gesture.last = point; render(); }
+		if (!state.gesture) { if (state.selectionDraft) { const local = pointerPosition(event); state.selectionDraft.cursor = canvasToSource(local.x, local.y); drawSelection(); } return; } autoPanStage(event); const local = pointerPosition(event), point = canvasToSource(local.x, local.y), gesture = state.gesture;
+		if (gesture.draftEdit) { if (Math.hypot(local.x - gesture.startLocal.x, local.y - gesture.startLocal.y) > 3) gesture.moved = true; if (gesture.moved) moveDraftPoint(gesture.hit, point); state.selectionDraft.cursor = null; drawSelection(); }
+		else if (gesture.draftPathNew) { if (Math.hypot(local.x - gesture.startLocal.x, local.y - gesture.startLocal.y) > 3) gesture.moved = true; if (gesture.moved) { const anchor = state.selectionDraft.points[gesture.index], dx = point.x - anchor.x, dy = point.y - anchor.y; anchor.out = {x: anchor.x + dx, y: anchor.y + dy}; anchor.in = {x: anchor.x - dx, y: anchor.y - dy}; } drawSelection(); }
+		else if (gesture.draftLassoAdd) { if (Math.hypot(local.x - gesture.startLocal.x, local.y - gesture.startLocal.y) > 3) gesture.moved = true; if (gesture.moved) { const points = state.selectionDraft.points; if (!gesture.started) { points.push(gesture.start); gesture.started = true; } const previous = points.at(-1), a = sourceToCanvas(previous), b = sourceToCanvas(point); if (Math.hypot(a.x - b.x, a.y - b.y) >= 2) points.push(point); gesture.last = point; } state.selectionDraft.cursor = gesture.moved ? null : point; drawSelection(); }
+		else if (gesture.transform) { updateSelectionTransform(gesture, point, event.shiftKey); gesture.last=point; render(); }
+		else if (state.tool === "move") { const layer = activeLayer(), dx = Math.round(point.x - gesture.start.x), dy = Math.round(point.y - gesture.start.y); layer.offsetX = gesture.layerStart.x + dx; layer.offsetY = gesture.layerStart.y + dy; if (gesture.selectionStart?.type === "magic") activeAsset().selection = {...gesture.selectionStart, spans: gesture.selectionStart.spans.map(span => ({...span, x: span.x + dx, y: span.y + dy}))}; else if (gesture.selectionStart) activeAsset().selection = {...gesture.selectionStart, points: gesture.selectionStart.points.map(source => ({...source, x: source.x + dx, y: source.y + dy, in: source.in ? {x: source.in.x + dx, y: source.in.y + dy} : null, out: source.out ? {x: source.out.x + dx, y: source.out.y + dy} : null}))}; gesture.last = point; render(); }
 		else if (["pencil", "brush", "eraser"].includes(state.tool)) { paintLine(gesture.last, point); gesture.last = point; render(); }
 		else if (state.tool === "clone") { cloneLine(gesture.last, point, gesture); gesture.last = point; render(); }
 		else if (state.tool === "recolour") { recolourLine(gesture.last, point); gesture.last = point; render(); }
@@ -380,9 +417,11 @@
 	function pointerUp(event) {
 		if (!state.gesture) return; const point = canvasToSource(pointerPosition(event).x, pointerPosition(event).y), gesture = state.gesture; state.gesture = null;
 		interactionCanvas.style.cursor = "";
+		if (gesture.draftEdit) { if (gesture.closeCandidate && !gesture.moved) finishSelectionDraft(); else drawSelection(); return; }
+		if (gesture.draftPathNew) { state.selectionDraft.cursor = null; drawSelection(); return; }
+		if (gesture.draftLassoAdd) { if (gesture.moved) { state.selectionDraft.points.push(point); return finishSelectionDraft(); } state.selectionDraft.points.push(point); state.selectionDraft.cursor = null; drawSelection(); return; }
 		if (gesture.transform) { pushHistory(gesture.before, gesture.transform === "rotate" ? "Rotate selection" : "Scale selection"); return render(); }
 		if (state.tool === "select") combineSelection({type: "rect", points: [gesture.start, point]});
-		else if (state.tool === "lasso") { gesture.points.push(point); if (gesture.points.length > 2) combineSelection({type: "lasso", points: gesture.points}); }
 		else if (["line", "rectangle", "ellipse"].includes(state.tool)) { if (gesture.previewCanvas) { gesture.previewCanvas.width = 1; gesture.previewCanvas.height = 1; } commitShape(state.tool, gesture.start, point); }
 		pushHistory(gesture.before); render();
 	}
@@ -575,6 +614,9 @@
 	document.addEventListener("keydown", event => {
 		if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)) return; const key = event.key.toLowerCase(), modifier = event.ctrlKey || event.metaKey;
 		if (modifier && key === "o") { event.preventDefault(); return $("fileInput").click(); } if (!activeAsset()) return;
+		if (state.selectionDraft && event.key === "Backspace") { event.preventDefault(); state.selectionDraft.points.pop(); if (!state.selectionDraft.points.length) return cancelSelectionDraft(); state.selectionDraft.cursor = null; return drawSelection(); }
+		if (state.selectionDraft && event.key === "Enter") { event.preventDefault(); return finishSelectionDraft(); }
+		if (state.selectionDraft && event.key === "Escape") { event.preventDefault(); return cancelSelectionDraft(); }
 		if (modifier && event.shiftKey && key === "s") { event.preventDefault(); return saveProject(); }
 		if (modifier && key === "a") { event.preventDefault(); if (event.shiftKey) return clearSelectionAndCommit(); activeAsset().selection = {type: "rect", points: [{x: 0, y: 0}, {x: activeAsset().width, y: activeAsset().height}]}; return render(); }
 		if (modifier && key === "z") { event.preventDefault(); event.shiftKey ? redo() : undo(); } else if (modifier && key === "y") { event.preventDefault(); redo(); } else if (modifier && key === "c") { event.preventDefault(); copySelection(); } else if (modifier && key === "x") { event.preventDefault(); copySelection(true); } else if (modifier && key === "v") { event.preventDefault(); pasteSelection(); } else if (modifier && key === "e") { event.preventDefault(); showTab("export"); } else if (state.tool === "move" && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) { event.preventDefault(); startNudge(event); } else if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); clearPixels(); } else if (event.key === "Escape") { clearSelectionAndCommit(); }
