@@ -91,31 +91,6 @@
 	gap: 8px;
 }
 
-.effects-modal { width: min(620px, calc(100vw - 32px)); }
-.ai-effects { margin: -18px -18px 0; padding: 18px; background: #1d1f20; border-bottom: 1px solid #424546; }
-.classic-effects { padding-top: 18px; }
-.effect-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 13px; }
-.effect-section-heading h3 { font-size: .86rem; }
-.effect-section-heading p { margin: 4px 0 0; color: #969b97; font-size: .73rem; }
-.local-badge { flex: none; padding: 3px 7px; border: 1px solid #5f5946; border-radius: 3px; color: var(--accent); font-size: .65rem; text-transform: uppercase; letter-spacing: .08em; }
-.ai-effect-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.ai-effect-card { min-height: 74px; padding: 11px 12px; border: 1px solid #46494a; border-radius: 4px; background: #282a2b; color: var(--text); text-align: left; cursor: pointer; }
-.ai-effect-card:first-child { grid-row: span 2; }
-.ai-effect-card:hover { border-color: #756847; background: #303130; }
-.ai-effect-card:disabled { opacity: .48; cursor: wait; }
-.ai-effect-card strong,.ai-effect-card span { display: block; }
-.ai-effect-card strong { margin-bottom: 5px; font-size: .8rem; }
-.ai-effect-card span { color: #9ea29e; font-size: .7rem; line-height: 1.35; }
-.ai-progress { margin-top: 12px; padding: 11px; border: 1px solid #4b4d48; border-radius: 3px; background: #222425; }
-.ai-progress > div { display: flex; justify-content: space-between; font-size: .73rem; }
-.ai-progress progress { width: 100%; height: 5px; margin: 8px 0 3px; accent-color: var(--accent); }
-.ai-progress p { margin: 0; color: #919691; font-size: .68rem; }
-.ai-effect-intro { position: relative; min-height: 86px; padding-right: 82px; }
-.ai-effect-intro > p { margin: 0 0 9px; color: #c3c6c2; line-height: 1.5; }
-.ai-effect-intro .local-badge { position: absolute; right: 0; top: 0; }
-.ai-effect-intro .ai-effect-note { color: #909590; font-size: .72rem; }
-@media(max-width:520px){.ai-effect-grid{grid-template-columns:1fr}.ai-effect-card:first-child{grid-row:auto}}
-
 .levels-fields {
 	margin: 16px 0 0;
 	padding: 12px;
