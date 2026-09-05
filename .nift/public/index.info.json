@@ -17,6 +17,7 @@
     "templates/template.html"
   ],
   "reqs": [
+    "public/assets/css/advanced.css",
     "public/assets/css/pict.css",
     "public/assets/css/polish.css",
     "public/assets/css/selection-hue.css",
