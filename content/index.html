@@ -1,10 +1,11 @@
 <a class="skip-link" href="#workspace">Skip to editor</a>
 <header class="topbar">
   <div class="brand"><span class="brand-mark" aria-hidden="true">L</span><span>Lumen</span></div>
-  <div class="top-actions"><span class="privacy-note">Images stay on this device</span><button class="button secondary" id="openButton" type="button">Open image</button><input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/avif" multiple hidden></div>
+  <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/avif" multiple hidden>
 </header>
 <main id="workspace" class="app-shell">
   <section class="empty-state" id="emptyState">
+    <div class="empty-art" aria-hidden="true"><span></span></div>
     <h1>Lumen</h1>
     <button class="button primary large" id="emptyOpenButton" type="button">Choose an image</button>
     <p class="drop-hint">or drop an image here / paste from the clipboard</p>
@@ -20,12 +21,27 @@
         <div><button class="icon-button" id="undoButton" type="button" aria-label="Undo" disabled>↶</button><button class="icon-button" id="redoButton" type="button" aria-label="Redo" disabled>↷</button><button class="text-button" id="resetButton" type="button">Reset</button></div>
         <div class="zoom-actions"><button class="icon-button" id="zoomOut" type="button" aria-label="Zoom out">−</button><output id="zoomOutput">Fit</output><button class="icon-button" id="zoomIn" type="button" aria-label="Zoom in">+</button></div>
       </div>
-      <div class="canvas-stage" id="canvasStage"><canvas id="previewCanvas"></canvas><div class="drop-overlay" id="dropOverlay">Drop images to add them</div></div>
+      <div class="paint-toolbar" role="toolbar" aria-label="Painting tools">
+        <button class="paint-tool active" data-tool="select" type="button" title="Rectangle select"><span>□</span>Select</button>
+        <button class="paint-tool" data-tool="lasso" type="button" title="Lasso select"><span>⌁</span>Lasso</button>
+        <button class="paint-tool" data-tool="eyedropper" type="button" title="Eyedropper"><span>◉</span>Pick</button>
+        <button class="paint-tool" data-tool="fill" type="button" title="Flood fill"><span>▰</span>Fill</button>
+        <button class="paint-tool" data-tool="pencil" type="button" title="Pencil"><span>╱</span>Pencil</button>
+        <button class="paint-tool" data-tool="brush" type="button" title="Brush"><span>●</span>Brush</button>
+        <button class="paint-tool" data-tool="eraser" type="button" title="Eraser"><span>◇</span>Eraser</button>
+      </div>
+      <div class="canvas-stage" id="canvasStage"><div class="canvas-wrap" id="canvasWrap"><canvas id="previewCanvas"></canvas><canvas id="interactionCanvas"></canvas></div><div class="drop-overlay" id="dropOverlay">Drop images to add them</div></div>
       <div class="image-status"><span id="sourceInfo"></span><span id="editedInfo"></span></div>
     </section>
     <aside class="controls-panel" aria-label="Editing controls">
       <div class="control-tabs" role="tablist"><button class="tab active" data-tab="edit" type="button" role="tab" aria-selected="true">Edit</button><button class="tab" data-tab="export" type="button" role="tab" aria-selected="false">Export</button></div>
       <div class="tab-panel" id="editPanel">
+        <section class="control-section tool-options">
+          <div class="section-heading"><h3 id="activeToolName">Rectangle select</h3><button class="text-button" id="clearSelection" type="button">Clear selection</button></div>
+          <div class="field-row"><label>Colour<input id="toolColor" type="color" value="#d5b871"></label><label>Size<input id="toolSize" type="number" min="1" max="200" value="18"></label></div>
+          <label class="range-label"><span>Fill tolerance <output id="toleranceValue">24</output></span><input id="fillTolerance" type="range" min="0" max="100" value="24"></label>
+          <div class="selection-actions"><button class="button secondary" id="cropToSelection" type="button">Crop to selection</button><button class="button secondary" id="deleteSelection" type="button">Delete selection</button></div>
+        </section>
         <section class="control-section">
           <h3>Transform</h3>
           <div class="tool-grid"><button class="tool-button" id="rotateLeft" type="button"><span>↶</span>Rotate left</button><button class="tool-button" id="rotateRight" type="button"><span>↷</span>Rotate right</button><button class="tool-button" id="flipHorizontal" type="button"><span>↔</span>Flip H</button><button class="tool-button" id="flipVertical" type="button"><span>↕</span>Flip V</button></div>
