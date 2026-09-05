@@ -6,6 +6,13 @@
 	const adjustmentIds = ["brightness", "contrast", "saturation", "warmth", "blur"];
 	const extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"};
 	const colours = ["#f3a6b8", "#ffb38a", "#f6d77d", "#b9e18f", "#80d7bd", "#83cbea", "#aaa7ed", "#d6a0df", "#a92f53", "#b94d22", "#a17a08", "#39752d", "#087363", "#176386", "#50439a", "#792f85"];
+	const aiEffects = {
+		background: {title:"Remove background", description:"Separate a portrait from its background while retaining soft hair and edge detail.", note:"Works best when a person is the clear foreground subject. The active layer becomes transparent outside the detected portrait."},
+		upscale: {title:"Upscale photo 2×", description:"Use learned super-resolution to produce a document with twice the width and height.", note:"This effect combines visible layers before enlargement. The flattened result can be undone."},
+		colourise: {title:"Colourise photo", description:"Analyse the scene and add restrained, subject-aware colour to a monochrome photograph.", note:"The colours are a plausible interpretation, not a recovery of the photograph's original colours."},
+		restore: {title:"Restore old photo", description:"Reduce isolated dust, scratches, fading, noise and softness using restoration processing and a learned detail model.", note:"The result is applied to the active layer and remains fully undoable."},
+		denoise: {title:"Denoise photo", description:"Remove photographic and compression noise with a learned restoration model while retaining useful edges.", note:"Fine texture may change because the model must distinguish texture from noise."}
+	};
 	const state = {assets: [], active: -1, zoom: 0, history: [], future: [], tool: "select", gesture: null, clipboard: null, colour: colours[0], restoring: false, textPoint: null, hue: 345, nudge: null, cloneSource: null, grid: false, draftTimer: null};
 	let toastTimer;
 
@@ -414,9 +421,10 @@
 	function layerSource(layer = activeLayer()) { const asset=activeAsset(), source=makeCanvas(asset.width,asset.height), context=source.getContext("2d"); context.globalAlpha=layer.opacity; context.globalCompositeOperation=layer.blend||"source-over"; context.drawImage(layer.canvas,layer.offsetX||0,layer.offsetY||0); return source; }
 	function flattenedSource() { const asset=activeAsset(), source=makeCanvas(asset.width,asset.height), context=source.getContext("2d"); for(const layer of asset.layers) if(layer.visible){context.save();context.globalAlpha=layer.opacity;context.globalCompositeOperation=layer.blend||"source-over";context.drawImage(layer.canvas,layer.offsetX||0,layer.offsetY||0);context.restore();} return source; }
 	function updateAIProgress({phase="Working",value=0,detail="Running locally"}) { $("aiStatus").textContent=phase; $("aiProgressText").textContent=Math.round(value)+"%"; $("aiProgressBar").value=Math.max(0,Math.min(100,value)); $("aiDetail").textContent=detail; }
+	function openAIEffect(kind) { const effect=aiEffects[kind]; if(!effect)return; if(!activeAsset())return showToast("Open an image first"); $("aiEffectTitle").textContent=effect.title; $("aiEffectDescription").textContent=effect.description; $("aiEffectNote").textContent=effect.note; $("runAIButton").textContent=effect.title; $("runAIButton").dataset.effect=kind; $("runAIButton").disabled=false; $("aiProgress").hidden=true; $("aiEffectDialog").showModal(); }
 	async function runAIEffect(kind) {
 		const asset=activeAsset(); if(!asset)return; if(!window.PictAI)return showToast("The local AI engine is still loading"); if(asset.width*asset.height>12000000)return showToast("Resize this image below 12 megapixels before using local AI"); if(kind==="upscale"&&asset.width*asset.height*4>40000000)return showToast("A 2× result would exceed Pict's 40 MP limit");
-		const buttons=[...document.querySelectorAll("[data-ai-effect]")],before=snapshot(),progress=$("aiProgress"); buttons.forEach(button=>button.disabled=true); progress.hidden=false; updateAIProgress({phase:"Preparing image",value:1,detail:"Your image remains on this device"});
+		const buttons=[$("runAIButton")],before=snapshot(),progress=$("aiProgress"); buttons.forEach(button=>button.disabled=true); progress.hidden=false; updateAIProgress({phase:"Preparing image",value:1,detail:"Your image remains on this device"});
 		try {
 			const source=kind==="upscale"?flattenedSource():layerSource(), result=await window.PictAI.run(kind,source,updateAIProgress);
 			if(kind==="upscale") { asset.width=result.width; asset.height=result.height; asset.layers=[{name:"AI upscale",canvas:result,visible:true,opacity:1,blend:"source-over"}]; asset.activeLayer=0; asset.edit={...defaultEdit(result),crop:{x:0,y:0,width:result.width,height:result.height}}; state.zoom=0; }
@@ -532,7 +540,8 @@
 	$("clearHistory").addEventListener("click", () => { state.history = []; state.future = []; updateHistoryButtons(); });
 	$("gridToggle").addEventListener("click", () => { state.grid = !state.grid; $("gridToggle").classList.toggle("active", state.grid); drawSelection(); });
 	$("applyCanvasSize").addEventListener("click", resizeCanvas); document.querySelectorAll("[data-effect]").forEach(button => button.addEventListener("click", () => applyEffect(button.dataset.effect)));
-	document.querySelectorAll("[data-ai-effect]").forEach(button => button.addEventListener("click", () => { closeMenus(); if(!activeAsset())return showToast("Open an image first"); if(!$("effectsDialog").open) $("effectsDialog").showModal(); runAIEffect(button.dataset.aiEffect); }));
+	document.querySelectorAll("[data-ai-open]").forEach(button => button.addEventListener("click", () => { closeMenus(); openAIEffect(button.dataset.aiOpen); }));
+	$("runAIButton").addEventListener("click", () => runAIEffect($("runAIButton").dataset.effect));
 	$("zoomIn").addEventListener("click", () => { state.zoom = Math.min(4, (state.zoom || canvas.width / activeAsset().edit.crop.width) * 1.25); render(); }); $("zoomOut").addEventListener("click", () => { state.zoom = Math.max(.05, (state.zoom || canvas.width / activeAsset().edit.crop.width) / 1.25); render(); });
 	$("applyRotation").addEventListener("click", () => mutate(asset => asset.edit.rotation = ((+$("rotationAngle").value % 360) + 360) % 360));
 	$("exportWidth").addEventListener("change", () => { if ($("lockRatio").checked) $("exportHeight").value = outputDimensions(+$("exportWidth").value)[1]; }); $("exportHeight").addEventListener("change", () => { if ($("lockRatio").checked) $("exportWidth").value = Math.round(+$("exportHeight").value * activeAsset().edit.crop.width / activeAsset().edit.crop.height); });

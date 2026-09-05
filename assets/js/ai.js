@@ -15,7 +15,9 @@ async function transformers(report = () => {}) {
 		}
 		if (!library) throw new Error("AI engine download failed: " + (lastError?.message || "network request blocked"));
 		library.env.allowLocalModels = false;
-		library.env.useBrowserCache = true;
+		// Some privacy-focused browsers expose CacheStorage but reject library access.
+		// Keep model instances for this session without making CacheStorage mandatory.
+		library.env.useBrowserCache = false;
 	}
 	return library;
 }
