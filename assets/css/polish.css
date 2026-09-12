@@ -1,5 +1,7 @@
 .canvas-stage {
 	background-color: #242627;
+	align-items: safe center;
+	justify-content: safe center;
 }
 
 .canvas-wrap {
